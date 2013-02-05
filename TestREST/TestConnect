@@ -1,0 +1,4 @@
+import urllib2
+
+url = 'https://hcpi-dev-cuda00.nrg.mir'
+response = urllib2.urlopen(url).read()

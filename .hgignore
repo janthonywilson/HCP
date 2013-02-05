@@ -1,0 +1,14 @@
+.metadata
+PatternClassification
+Parse
+RawRest
+data
+InterfaceXNATClass
+BET
+Pipelines
+.project
+.pydevproject
+
+# git stuff
+.git
+.gitignore
