@@ -3,7 +3,7 @@ Created on 2012-12-19
 
 @author: jwilso01
 '''
-import struct
+
 # multiplatform system stuff...
 import os
 import sys
@@ -12,6 +12,8 @@ import socket
 import base64
 import urllib
 import urllib2
+#import requests
+#import httplib2
 from ssl import SSLError
 import xml.etree.ElementTree as ET
 from urllib2 import URLError, HTTPError
@@ -58,27 +60,78 @@ class getHCP:
         
         self.FileInfo = {}
         
+#        self.SessionId = 'BE07716A225958F2FDD51D26E0D26449'
         self.SessionId = self.getSessionId()
     #===============================================================================
     def getSessionId( self ):
         """Get session id for getHCP session spawn"""
-        restURL = self.Server + '/data/JSESSION'
-        restPost = urllib.urlencode({'foo' : 'bar'})
-        restRequest = urllib2.Request(restURL, restPost)
-        restAuthHeader = "Basic %s" % base64.encodestring('%s:%s' % (self.User, self.Password))[:-1]
-        restRequest.add_header("Authorization", restAuthHeader)
+        URL = self.Server + 'data/JSESSION'
+
+        #=======================================================================
+        # # httplib2
+        # h = httplib2.Http(".cache")
+        # h.add_credentials(self.User, self.Password)
+        # r, content = h.request(URL, "GET")
+        #=======================================================================
+
+        # URLLIB2
+        Request = urllib2.Request(URL)
+        basicPasswordManager = urllib2.HTTPPasswordMgrWithDefaultRealm()
+        basicPasswordManager.add_password(None, URL, self.User, self.Password)
+        basicAuthHandler = urllib2.HTTPBasicAuthHandler(basicPasswordManager)
+        openerURL = urllib2.build_opener(basicAuthHandler)
+        urllib2.install_opener(openerURL)
+        
+#        restPost = urllib.urlencode({'foo' : 'bar'})
+#        restRequest = urllib2.Request(URL, restPost)
+#        restAuthHeader = "Basic %s" % base64.encodestring('%s:%s' % (self.User, self.Password))[:-1]
+#        restRequest.add_header("Authorization", restAuthHeader)
 
         while (self.Timeout <= self.TimeoutMax):
             try:
-                restConnHandle = urllib2.urlopen(restRequest, None, self.Timeout)
+                connHandle = urllib2.urlopen(Request, None, self.Timeout)
                 break
             except URLError, e:
                 self.Timeout += self.TimeoutStep
                 print 'URLError code: ' +str(e.reason)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for JSESSION cookie...'
                 
                 
-        self.SessionId = restConnHandle.read()
+        self.SessionId = connHandle.read()
         return self.SessionId
+    #===============================================================================
+    def getURLString( self, URL ):
+        """Get URL results as string"""
+        restRequest = urllib2.Request(URL)
+        restRequest.add_header("Cookie", "JSESSIONID=" + self.SessionId);
+    
+        while (self.Timeout <= self.TimeoutMax):
+            try:
+                restConnHandle = urllib2.urlopen(restRequest, None, self.Timeout)
+            except HTTPError, e:
+                if (e.code != 404):
+                    self.Timeout += self.TimeoutStep
+                    print 'HTTPError code: ' +str(e.code)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for ' +URL
+                else:
+                    return '404 Error'
+            except URLError, e:
+                self.Timeout += self.TimeoutStep
+                print 'URLError code: ' +str(e.reason)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for ' +URL
+            except SSLError, e:
+                self.Timeout += self.TimeoutStep
+                print 'SSLError code: ' +str(e.message)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for ' +URL
+            except socket.timeout:
+                self.Timeout += self.TimeoutStep
+                print 'Socket timed out. Timeout increased to ' +str(self.Timeout)+ ' seconds for ' +URL
+                
+            else:
+                try:
+                    ReadResults = restConnHandle.read()
+                    return ReadResults
+                except HTTPError, e:
+                    print 'HTTPError code: ' +str(e.code)+ '. File read timeout for ' +str(self.Timeout)+ ' seconds for ' +URL
+                    
+        print 'ERROR: No reasonable timeout limit could be found for ' + URL
+        sys.exit()
     #===============================================================================
     def getProjects( self ):
         """Get a list of project names from XNAT instance"""
@@ -171,7 +224,7 @@ class getHCP:
                 currSession = currRowSplit[labelIdx].replace('"', '')
                 currSessionUniq = currRowSplit[uniqInternalId].replace('"', '')
                 
-                if (currSession.find('fnc') != -1) or (currSession.find('str') != -1) or (currSession.find('diff') != -1) or (currSession.find('xtr') != -1):
+                if (currSession.find('fnc') != -1) or (currSession.find('str') != -1) or (currSession.find('diff') != -1) or (currSession.find('xtr') != -1) or (currSession.find('3T') != -1):
                     if (currSession.find('xtr') != -1):
                         SubjectSessionsID.append(currSession)
                         self.Session = currSession
@@ -185,6 +238,19 @@ class getHCP:
                         else:
                             SubjectSessionsType.append('unknown')
                         
+                    elif (currSession.find('3T') != -1):
+                        SubjectSessionsID.append(currSession)
+                        self.Session = currSession
+                        SessionTypeList = self.getSessionMeta( ).get('Types')
+                        if ('T1w' in SessionTypeList) and ('T2w' in SessionTypeList):
+                            SubjectSessionsType.append('strc')
+                        if ('dMRI' in SessionTypeList):
+                            SubjectSessionsType.append('diff')
+                        if ('tfMRI' in SessionTypeList):
+                            SubjectSessionsType.append('task')
+                        if ('rfMRI' in SessionTypeList):
+                            SubjectSessionsType.append('rest')
+                            
                     else:
                         if (currSession.find('fnc') != -1): SubjectSessionsType.append('fnc')
                         elif (currSession.find('strc') != -1): SubjectSessionsType.append('strc')
@@ -348,40 +414,6 @@ class getHCP:
         SubjectResources = { 'FileNames': FileNames, 'FileURIs': FileURIs, 'FileSessions': FileSessions, 'FileLabels': FileLabels }
         return SubjectResources
     #===============================================================================
-    def getURLString( self, URL ):
-        """Get URL results as string"""
-        restRequest = urllib2.Request(URL)
-        restRequest.add_header("Cookie", "JSESSIONID=" + self.SessionId);
-    
-        while (self.Timeout <= self.TimeoutMax):
-            try:
-                restConnHandle = urllib2.urlopen(restRequest, None, self.Timeout)
-            except HTTPError, e:
-                if (e.code != 404):
-                    self.Timeout += self.TimeoutStep
-                    print 'HTTPError code: ' +str(e.code)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for ' +URL
-                else:
-                    return '404 Error'
-            except URLError, e:
-                self.Timeout += self.TimeoutStep
-                print 'URLError code: ' +str(e.reason)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for ' +URL
-            except SSLError, e:
-                self.Timeout += self.TimeoutStep
-                print 'SSLError code: ' +str(e.message)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for ' +URL
-            except socket.timeout:
-                self.Timeout += self.TimeoutStep
-                print 'Socket timed out. Timeout increased to ' +str(self.Timeout)+ ' seconds for ' +URL
-                
-            else:
-                try:
-                    ReadResults = restConnHandle.read()
-                    return ReadResults
-                except HTTPError, e:
-                    print 'HTTPError code: ' +str(e.code)+ '. File read timeout for ' +str(self.Timeout)+ ' seconds for ' +URL
-                    
-        print 'ERROR: No reasonable timeout limit could be found for ' + URL
-        sys.exit()
-    #===============================================================================
     def getFileInfo( self, URL ):
         """Get info about a file on the server"""
         restRequest = urllib2.Request(URL)
@@ -485,14 +517,18 @@ class getHCP:
             # Hopefully, digest will come out here?
             # digestIdx = restSessionHeaderSplit.index('"Digest"')
             # "Name","Size","URI","collection","file_tags","file_format","file_content","cat_ID"
-            nameIdx = restSessionHeaderSplit.index('"Name"')
+            #===================================================================
+            # Maybe useful later...
+            #===================================================================
+            # nameIdx = restSessionHeaderSplit.index('"Name"')
+            # collectionIdx = restSessionHeaderSplit.index('"collection"')
+            # fileTagsIdx = restSessionHeaderSplit.index('"file_tags"')
+            # fileFormatIdx = restSessionHeaderSplit.index('"file_format"')
+            # fileContentIdx = restSessionHeaderSplit.index('"file_content"')
+            # catIdIdx = restSessionHeaderSplit.index('"cat_ID"')     
+            #===================================================================
             sizeIdx = restSessionHeaderSplit.index('"Size"')
-            uriIdx = restSessionHeaderSplit.index('"URI"')
-            collectionIdx = restSessionHeaderSplit.index('"collection"')
-            fileTagsIdx = restSessionHeaderSplit.index('"file_tags"')
-            fileFormatIdx = restSessionHeaderSplit.index('"file_format"')
-            fileContentIdx = restSessionHeaderSplit.index('"file_content"')
-            catIdIdx = restSessionHeaderSplit.index('"cat_ID"')           
+            uriIdx = restSessionHeaderSplit.index('"URI"')      
            
             for i in xrange(1, restEndCount):
                 currRow = restResultsSplit[i]
@@ -591,44 +627,52 @@ class getHCP:
 #===============================================================================
 class writeHCP:
     """HCP Write Class"""
-    def writeFileFromURL( self, FileURIList ):
+    def __init__( self, DestinationDir  ):
+        self.DestinationDir = DestinationDir
+        
+        
+    def writeFileFromURL( self, FileURI ):
     
-            WriteCode = True
-            if (self.DestinationDir[-1] != os.sep):
-                self.DestinationDir = self.DestinationDir + os.sep
-    
-            if not os.path.exists(self.DestinationDir):
-                os.makedirs(self.DestinationDir)
+        FileURIList = FileURI.split(',')
+        WriteCode = True
+        if (self.DestinationDir[-1] != os.sep):
+            self.DestinationDir = self.DestinationDir + os.sep
+
+        if not os.path.exists(self.DestinationDir):
+            os.makedirs(self.DestinationDir)
+            
+        for i in xrange(len(FileURIList)):
+            currURI = FileURIList[i]
+            currFileName = os.path.basename(currURI)
                 
-            for i in xrange(len(FileURIList)):
-                currURI = FileURIList[i]
-                currFileName = os.path.basename(currURI)
-                    
-                fileURL = self.Server + currURI
-                fileInfo = self.getFileInfo(fileURL)
-                fileResults = self.getURLString(fileURL)
-                
+            #===================================================================
+            # need getHCP class here...
+            #===================================================================
+            fileURL = self.Server + currURI
+            fileInfo = self.getFileInfo(fileURL)
+            fileResults = self.getURLString(fileURL)
+            
 #                WriteTotal = fileInfo.get('Bytes') + WriteTotal
-                
-                if (fileInfo.get('Bytes') != str(len(fileResults))):
-                    print 'WARNING: Expected ' +fileInfo.get('Bytes')+ ' bytes and downloaded ' +str(len(fileResults))+ ' bytes for file ' +currFileName
+            
+            if (fileInfo.get('Bytes') != str(len(fileResults))):
+                print 'WARNING: Expected ' +fileInfo.get('Bytes')+ ' bytes and downloaded ' +str(len(fileResults))+ ' bytes for file ' +currFileName
+                WriteCode = False
+            else:
+                with open(self.DestinationDir + currFileName, 'wb') as outputFileId:
+                    writeCode = outputFileId.write(fileResults)
+                    if (self.Verbose):
+                        print 'File: ' +self.DestinationDir+currFileName+ '  Write Code: ' +str(writeCode)
+                    outputFileId.flush()
+                    os.fsync(outputFileId)
+                    outputFileId.close()
+                    
+                # check file size after write...
+                writeFileSize = os.path.getsize(self.DestinationDir + currFileName)
+                if (fileInfo.get('Bytes') != str(writeFileSize)):
+                    print 'WARNING: WROTE ' +str(len(fileResults))+ ' bytes but expected ' +str(writeFileSize)+ ' bytes for file ' +self.DestinationDir+currFileName
                     WriteCode = False
-                else:
-                    with open(self.DestinationDir + currFileName, 'wb') as outputFileId:
-                        writeCode = outputFileId.write(fileResults)
-                        if (self.Verbose):
-                            print 'File: ' +self.DestinationDir+currFileName+ '  Write Code: ' +str(writeCode)
-                        outputFileId.flush()
-                        os.fsync(outputFileId)
-                        outputFileId.close()
-                        
-                    # check file size after write...
-                    writeFileSize = os.path.getsize(self.DestinationDir + currFileName)
-                    if (fileInfo.get('Bytes') != str(writeFileSize)):
-                        print 'WARNING: WROTE ' +str(len(fileResults))+ ' bytes but expected ' +str(writeFileSize)+ ' bytes for file ' +self.DestinationDir+currFileName
-                        WriteCode = False
-                        
-            return WriteCode
+                    
+        return WriteCode
 #===============================================================================
 # END CLASS DEFs
 #===============================================================================
