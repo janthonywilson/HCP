@@ -9,53 +9,48 @@ Created on Dec 23, 2012
 # multiplatform stuff...
 import os
 import sys
+import socket
 import argparse
 # Time manipulation...
 import time
-#import pytz
-#from datetime import datetime
 # XML parsing...
 import xml.etree.ElementTree as ET
-# Web stuff...
-import socket
-#import urllib
-#import urllib2
-#import urlnorm
-#from ssl import SSLError
-#from urllib2 import URLError, HTTPError
 
 #sys.path.append('..' +os.sep) 
 from pyHCP import getHCP
+from pyHCP import writeHCP
 
 sTime = time.time()
+
+#-U hodgem3 -P Michael333
 
 #===============================================================================
 # PARSE INPUT
 #===============================================================================
 parser = argparse.ArgumentParser(description="Program to figure out pipelines status via WORKFLOW XML...")
 # input...
-parser.add_argument("-U", "--User", dest="iUser", default='tony', type=str)
-parser.add_argument("-P", "--Password", dest="iPassword", type=str)
-parser.add_argument("-S", "--inputSubjects", dest="inputSubjects", default=None, help="pick subject, or a list of subjects")
+parser.add_argument("-U", "--User", dest="User", default='tony', type=str)
+parser.add_argument("-P", "--Password", dest="Password", type=str)
+parser.add_argument("-S", "--Subjects", dest="Subjects", default=None, help="pick subject, or a list of subjects")
 # output...
 parser.add_argument("-D", "--outputDir", dest="outputDir", type=str, help="where do you want to write output tab-text")
 # timeout...
 parser.add_argument("-t", "--time_out", dest="Timeout", type=float, default=16.0, help="change timeout")
 # remote...
-parser.add_argument("-Web", "--WS", dest="WebServer", type=str, default="https://intradb.humanconnectome.org", help="pick server")
-parser.add_argument("-Proj", "--Project", dest="inputProject", type=str, default="HCP_Phase2", help="pick project")
+parser.add_argument("-W", "--Web", dest="Server", type=str, default="https://intradb.humanconnectome.org", help="pick server")
+parser.add_argument("-Proj", "--Project", dest="Project", type=str, default="HCP_Phase2", help="pick project")
 # version...
 parser.add_argument('--version', action='version', version='%(prog)s 0.1.1')
 
 args = parser.parse_args()
-User = args.iUser
-Password = args.iPassword
-inputSubjects = args.inputSubjects
+User = args.User
+Password = args.Password
+Subjects = args.Subjects
     
 outputDir = os.path.normpath(args.outputDir)
 
-inputProject = args.inputProject
-Server = args.WebServer
+Project = args.Project
+Server = args.Server
 Server.strip()
 if (Server[-1] != '/'):
     Server = Server + '/'
@@ -128,50 +123,51 @@ SubjectList = list()
 #===============================================================================
 print "Running %s on %s" % (os.path.split(sys.argv[0])[1], socket.gethostname())
 print sys.path
-getHCP.Verbose = True
-getHCP.DestinationDir = outputDir + os.sep
 
 getHCP = getHCP(User, Password, Server)
+getHCP.Verbose = True
+getHCP.Project = 'ReleaseTest'
+
+DestinationDir = outputDir + os.sep
+writeHCP = writeHCP(DestinationDir)
+
+
+
 
 #===============================================================================
 # Setup output...
 #===============================================================================
-if (inputSubjects == None):
-    inputSubjectsList = getHCP.Subjects
-elif (inputSubjects != None):
-    inputSubjectsList = inputSubjects.split(',')
+if (Subjects == None):
+    getHCP.Subjects = getHCP.getSubjects()
+elif (Subjects != None):
+    getHCP.Subjects = Subjects.split(',')
 
-outputFileBase = 'PipelineStatus'
-if (len(inputSubjectsList) == 1):
-    outputFileAppend = inputSubjectsList[0]
-else:
-    outputFileAppend = inputProject
     
-outputFileExt = '.txt'
-outputDirFile = '%s\\%s%s%s' % (outputDir, outputFileBase, outputFileAppend, outputFileExt)
+#outputFileExt = '.txt'
+#outputDirFile = '%s\\%s%s%s' % (outputDir, outputFileBase, outputFileAppend, outputFileExt)
 #===============================================================================
 # show usage of class...
 #===============================================================================
 if (showClassUsage):
     
-    getHCP.Project = 'HCP_Phase2'
-    getHCP.Subject = '103515'
-    getHCP.Session = getHCP.Subject + '_strc'
-    getHCP.SessionType = 'Structural'
+#    getHCP.Project = 'HCP_Phase2'
+    getHCP.Subject = getHCP.Subjects[0]
+    getHCP.SubjectSessions = getHCP.getSubjectSessions()
+    getHCP.SessionMeta = getHCP.getSessionMeta()
     
-    getHCP.Scan = '5'
-    ScanIds, ScanTypes, ScanSeries, ScanQualty, ScanXnatId = getHCP.fGetSessionMeta()
-    Names, Sizes, URIs, Collections = getHCP.fGetScanMeta()
-    getHCP.fWriteFileFromURL(URIs, ['nii'])
+    getHCP.Scan = '102'
+    ScanMeta = getHCP.getScanMeta()
+    print ScanMeta.get('URIs')[ScanMeta.get('Collections').index('NIFTI')]
+    writeHCP.writeFileFromURL(ScanMeta.get('URIs')[ScanMeta.get('Collections').index('NIFTI')])
     
-    print getHCP.fGetProjects()
+    print getHCP.getProjects()
     print getHCP.SessionId
     print getHCP.Subjects
-    print getHCP.fGetSubjectSessions()
+    print getHCP.getSubjectSessions()
     
-    print getHCP.fGetFileInfo('https://intradb.humanconnectome.org/data/projects/HCP_Phase2/subjects/192439/experiments/192439_strc/resources/Details/files/StructuralHCP.log')
-    print 'Bytes: ' +getHCP.fGetFileInfo('https://intradb.humanconnectome.org/data/projects/HCP_Phase2/subjects/197550/experiments/197550_diff/resources/Diffusion/files/Diffusion/data/bvals').get('Bytes')
-    print getHCP.fGetProjects()
+    print getHCP.getFileInfo('https://intradb.humanconnectome.org/data/projects/HCP_Phase2/subjects/192439/experiments/192439_strc/resources/Details/files/StructuralHCP.log')
+    print 'Bytes: ' +getHCP.getFileInfo('https://intradb.humanconnectome.org/data/projects/HCP_Phase2/subjects/197550/experiments/197550_diff/resources/Diffusion/files/Diffusion/data/bvals').get('Bytes')
+    print getHCP.getProjects()
     print getHCP.Session
     
 #    Quality, ScanId, Series, Sessions, ScanType = getHCP.fGetSessionQuality()
