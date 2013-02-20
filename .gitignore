@@ -19,9 +19,8 @@ data/
 
 # Eclipse
 .metadata/
-.project
-.pydevproject
+
 
 # Mercurial
 .hg/
-.hginoreFILE_NAME
+.hginore

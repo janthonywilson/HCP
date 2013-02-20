@@ -7,6 +7,8 @@ Created on 2012-12-19
 # multiplatform system stuff...
 import os
 import sys
+import errno
+import subprocess
 # Web stuff...
 import socket
 import base64
@@ -21,18 +23,37 @@ from urllib2 import URLError, HTTPError
 #===============================================================================
 # CLASSES
 #===============================================================================
-class getHCP:
-    """HCP Interfacing Class for GETs"""
-    def __init__( self, User, Password, Server  ):
+class pyHCP(object):
+    """Main HCP Interfacing Class"""
+    def __init__( self, User, Password, Server ):
+        super(pyHCP, self).__init__()
         self.User = User
         self.Password = Password
+        self.Server = self.cleanServer(Server)
         
+    def cleanServer(self, Server):
         Server.strip()
         if (Server[-1] != '/'):
             Server = Server + '/'
         if (Server.find('http') == -1):
             Server = 'https://' + Server
         self.Server = Server
+        return self.Server
+    
+    def getServer(self):
+        return self.Server
+        
+class getHCP(pyHCP):
+    """HCP Interfacing Class for GETs"""
+
+    def __init__( self, pyHCP ):
+        
+        #=======================================================================
+        # need to add a check for project existence.../
+        #=======================================================================
+        self.User = pyHCP.User
+        self.Password = pyHCP.Password
+        self.Server = pyHCP.Server
         
         self.Verbose = False
         self.Timeout = 8
@@ -54,13 +75,19 @@ class getHCP:
         self.Subjects = []
         self.SubjectSessions = []
         self.SubjectSessionsUniq = []
+        self.SubjectResourcesMeta = {}
         
         self.Scan = ''
         self.Scans = []
         
-        self.FileInfo = {}
+        self.Resource = ''
+        self.Resources = []
         
-#        self.SessionId = 'BE07716A225958F2FDD51D26E0D26449'
+        self.FileInfo = {}
+        self.ScanMeta = {}
+        self.ResourceMeta = {}
+        
+    #        self.SessionId = 'BE07716A225958F2FDD51D26E0D26449'
         self.SessionId = self.getSessionId()
     #===============================================================================
     def getSessionId( self ):
@@ -81,26 +108,37 @@ class getHCP:
         basicAuthHandler = urllib2.HTTPBasicAuthHandler(basicPasswordManager)
         openerURL = urllib2.build_opener(basicAuthHandler)
         urllib2.install_opener(openerURL)
-        
-#        restPost = urllib.urlencode({'foo' : 'bar'})
-#        restRequest = urllib2.Request(URL, restPost)
-#        restAuthHeader = "Basic %s" % base64.encodestring('%s:%s' % (self.User, self.Password))[:-1]
-#        restRequest.add_header("Authorization", restAuthHeader)
 
         while (self.Timeout <= self.TimeoutMax):
             try:
                 connHandle = urllib2.urlopen(Request, None, self.Timeout)
                 break
             except URLError, e:
+                try:
+                    code = e.code
+                    if  (code != 401):
+                        self.Timeout += self.TimeoutStep
+                        print 'URLError code: ' +str(e.reason)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for JSESSION cookie...'
+                    else:
+                        print 'URLError code: ' +str(e.reason)+ '. getSessionId Failed with wrong password.'
+                        sys.exit(401)
+                except:
+                    print 'URL: %s failed because %s ' % (URL, e.reason)
+                    sys.exit()
+            except SSLError, e:
                 self.Timeout += self.TimeoutStep
-                print 'URLError code: ' +str(e.reason)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for JSESSION cookie...'
+                print 'SSLError code: ' +str(e.message)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for ' +URL
+            except socket.timeout:
+                self.Timeout += self.TimeoutStep
+                print 'Socket timed out. Timeout increased to ' +str(self.Timeout)+ ' seconds for ' +URL
+            
                 
                 
         self.SessionId = connHandle.read()
         return self.SessionId
     #===============================================================================
     def getURLString( self, URL ):
-        """Get URL results as string"""
+        """Get URL results as a string"""
         restRequest = urllib2.Request(URL)
         restRequest.add_header("Cookie", "JSESSIONID=" + self.SessionId);
     
@@ -203,6 +241,7 @@ class getHCP:
         if (not self.Project):
             print 'ERROR: No project specified...'
         
+        AllProject = self.getProjects()
         restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments?format=csv&columns=ID,label'
         restResults = self.getURLString(restURL)
         
@@ -239,17 +278,21 @@ class getHCP:
                             SubjectSessionsType.append('unknown')
                         
                     elif (currSession.find('3T') != -1):
-                        SubjectSessionsID.append(currSession)
+                        
                         self.Session = currSession
                         SessionTypeList = self.getSessionMeta( ).get('Types')
                         if ('T1w' in SessionTypeList) and ('T2w' in SessionTypeList):
                             SubjectSessionsType.append('strc')
+                            SubjectSessionsID.append(currSession)
                         if ('dMRI' in SessionTypeList):
                             SubjectSessionsType.append('diff')
+                            SubjectSessionsID.append(currSession)
                         if ('tfMRI' in SessionTypeList):
                             SubjectSessionsType.append('task')
+                            SubjectSessionsID.append(currSession)
                         if ('rfMRI' in SessionTypeList):
                             SubjectSessionsType.append('rest')
+                            SubjectSessionsID.append(currSession)
                             
                     else:
                         if (currSession.find('fnc') != -1): SubjectSessionsType.append('fnc')
@@ -260,8 +303,11 @@ class getHCP:
                 
             SubjectSessionUniq.append(currSessionUniq)
 
-        SubjectSessions = {'Sessions': SubjectSessionsID, 'Types': SubjectSessionsType}
-        return SubjectSessions
+            SubjectSessions = {'Sessions': SubjectSessionsID, 'Types': SubjectSessionsType}
+            return SubjectSessions
+        else:
+            print 'ERROR(getSubjectSessions()): No subject sessions found for subject %s under project %s' % (self.Subject, self.Project)
+            sys.exit(-1)
     #===============================================================================    
     def getSubjectsSessions( self ):
         """Get all sessions and session types for all subjects"""
@@ -290,7 +336,8 @@ class getHCP:
         ScanXnatId = list()
 
         if not self.Session:
-            print 'No session for Session Meta Data...'
+            print 'No session for getSessionMeta()...'
+            sys.exit(-1)
             
         restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/scans?format=csv&columns=ID,type,series_description,quality,xnat:mrSessionData/id'
         
@@ -360,15 +407,20 @@ class getHCP:
                 
         return Quality, ScanIds, Series, Sessions, ScanType
     #===============================================================================
-    def getSubjectResources(self):
+    def getSubjectResourcesMeta(self):
         
         ResourceHeader = list()
         FileNames = list()
         FileURIs = list()
         FileSessions = list()
         FileLabels = list()
+        FileTags = list()
+        FileFormats = list()
+        FileContents = list()
+        FileReadable = list()
+        FilePath = list()
         
-        SubjectSessions = self.getSubjectSessions()[0]
+        SubjectSessions = list(set(self.getSubjectSessions().get('Sessions')))
     
         for i in range(0, len(SubjectSessions)):
     #        restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/scans?format=csv&columns=ID,type,series_description,quality,xnat:mrSessionData/id'
@@ -396,26 +448,140 @@ class getHCP:
 #                    currRowCount = currRow.count(',')
                     currLabel = currRowSplit[labelIdx].replace('"', '')
         
+                    #===========================================================
+                    # all this nonsense should be replaced with a call to getResourceMeta()
+                    #===========================================================
                     restURL = self.Server +'data/projects/'+ self.Project +'/subjects/'+ self.Subject +'/experiments/'+ SubjectSessions[i] +'/resources/'+ currLabel +'/files?format=csv'
-        
                     restResults = self.getURLString(restURL)
         
                     currRestResultsSplit = restResults.split('\n')
                     currRestEndCount = restResults.count('\n')
+                    currRestSessionHeader = currRestResultsSplit[0]
+                    currRestSessionHeaderSplit = currRestSessionHeader.split(',')
+                    
+                    nameIdx = currRestSessionHeaderSplit.index('"Name"')
+                    sizeIdx = currRestSessionHeaderSplit.index('"Size"')
+                    uriIdx = currRestSessionHeaderSplit.index('"URI"')
+                    collectionIdx = currRestSessionHeaderSplit.index('"collection"')
+                    fileTagsIdx = currRestSessionHeaderSplit.index('"file_tags"')
+                    fileFormatIdx = currRestSessionHeaderSplit.index('"file_format"')
+                    fileContentIdx = currRestSessionHeaderSplit.index('"file_content"')
         
                     for k in xrange(1,currRestEndCount):
                         newRow = currRestResultsSplit[k]
                         currRowSplit = newRow.split(',')
-                        FileNames.append(currRowSplit[0].replace('"', ''))
-                        FileURIs.append(currRowSplit[2].replace('"', ''))
+                        FileNames.append(currRowSplit[nameIdx].replace('"', ''))
+                        FileURIs.append(currRowSplit[uriIdx].replace('"', ''))
+                        FileTags.append(currRowSplit[fileTagsIdx].replace('"', ''))
+                        FileFormats.append(currRowSplit[fileFormatIdx].replace('"', ''))
+                        FileContents.append(currRowSplit[fileContentIdx].replace('"', ''))
+                        
                         FileSessions.append(SubjectSessions[i].replace('"', ''))
                         FileLabels.append(currLabel.replace('"', ''))
+                        
+                    # do the path query...    
+                    restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + SubjectSessions[i] + '/resources/' + currLabel + '/files?format=csv&locator=absolutePath'
+                    newRestResults = self.getURLString(restURL)
         
-        SubjectResources = { 'FileNames': FileNames, 'FileURIs': FileURIs, 'FileSessions': FileSessions, 'FileLabels': FileLabels }
+                    newRestResultsSplit = newRestResults.split('\n')
+                    newRestEndCount = newRestResults.count('\n')
+                    newRestSessionHeader = newRestResultsSplit[0]
+                    newRestSessionHeaderSplit = newRestSessionHeader.split(',')
+                    
+                    # ['"Name"', '"Size"', '"URI"', '"collection"', '"file_tags"', '"file_format"', '"file_content"', '"cat_ID"']
+                    pathIdx = newRestSessionHeaderSplit.index('"absolutePath"')
+                    
+                    for k in xrange(1, newRestEndCount):
+                        currRow = newRestResultsSplit[k]
+                        currRowSplit = currRow.split(',')
+                        FilePath.append(currRowSplit[pathIdx].replace('"', ''))
+                        try:
+                            FileObj = open(FilePath[-1], 'r')
+                            # if readable:
+                            FileReadable.append(True)
+                        except IOError, e:
+                            if self.Verbose:
+                                print 'getSubjectResources(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
+                            FileReadable.append(False)
+        
+        SubjectResources = { 'Name': FileNames, 'URI': FileURIs, 'Session': FileSessions, 'Label': FileLabels, 'Content': FileContents, 'Format': FileFormats, 'Path': FilePath, 'Readable': FileReadable }
         return SubjectResources
+    #===============================================================================  
+    def getResourceMeta(self):
+        """Get file info about a given resource"""
+        
+        Names = list()
+        Sizes = list()
+        URIs = list()
+        Collections = list()
+        FilePath = list()
+        FileTags = list()
+        FileFormats = list()
+        FileContents = list()
+        FileReadable = list()
+        
+        # https://hcpx-dev-cuda00.nrg.mir/data/projects/HCP_Q1/subjects/100307/experiments/100307_3T/resources/tfMRI_WM_RL_unproc/files?format=csv&columns=ID,type,series_description,quality,xnat:mrSessionData/id
+        restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/resources/' + self.Resource + '/files?format=csv&columns=ID,type,series_description,quality,xnat:mrSessionData/id,file_tags,file_format,file_content'
+        restResults = self.getURLString(restURL)
+        
+        restResultsSplit = restResults.split('\n')
+        restEndCount = restResults.count('\n')
+        restSessionHeader = restResultsSplit[0]
+        restSessionHeaderSplit = restSessionHeader.split(',')
+        
+        # ['"Name"', '"Size"', '"URI"', '"collection"', '"file_tags"', '"file_format"', '"file_content"', '"cat_ID"']
+        nameIdx = restSessionHeaderSplit.index('"Name"')
+        sizeIdx = restSessionHeaderSplit.index('"Size"')
+        uriIdx = restSessionHeaderSplit.index('"URI"')
+        collectionIdx = restSessionHeaderSplit.index('"collection"')
+        fileTagsIdx = restSessionHeaderSplit.index('"file_tags"')
+        fileFormatIdx = restSessionHeaderSplit.index('"file_format"')
+        fileContentIdx = restSessionHeaderSplit.index('"file_content"')
+        
+        
+        for j in xrange(1, restEndCount):
+            currRow = restResultsSplit[j]
+            currRowSplit = currRow.split(',')
+    
+            Names.append(currRowSplit[nameIdx].replace('"', ''))
+            Sizes.append(currRowSplit[sizeIdx].replace('"', ''))
+            URIs.append(currRowSplit[uriIdx].replace('"', ''))
+            Collections.append(currRowSplit[collectionIdx].replace('"', ''))
+            FileTags.append(currRowSplit[fileTagsIdx].replace('"', ''))
+            FileFormats.append(currRowSplit[fileFormatIdx].replace('"', ''))
+            FileContents.append(currRowSplit[fileContentIdx].replace('"', ''))
+        
+        # do the path query...    
+        restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/resources/' + self.Resource + '/files?format=csv&locator=absolutePath'
+        restResults = self.getURLString(restURL)
+        
+        restResultsSplit = restResults.split('\n')
+        restEndCount = restResults.count('\n')
+        restSessionHeader = restResultsSplit[0]
+        restSessionHeaderSplit = restSessionHeader.split(',')
+        
+        # ['"Name"', '"Size"', '"URI"', '"collection"', '"file_tags"', '"file_format"', '"file_content"', '"cat_ID"']
+        pathIdx = restSessionHeaderSplit.index('"absolutePath"')
+        
+        for j in xrange(1, restEndCount):
+            currRow = restResultsSplit[j]
+            currRowSplit = currRow.split(',')
+            FilePath.append(currRowSplit[pathIdx].replace('"', ''))
+            try:
+                FileObj = open(FilePath[-1], 'r')
+                # if readable:
+                FileReadable.append(True)
+            except IOError, e:
+                if self.Verbose:
+                    print 'getScanMeta(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
+                FileReadable.append(False)
+                
+        ResourceMeta = {'Names': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Collections': Collections, 'Format': FileFormats, 'Contents': FileContents}
+        return ResourceMeta
     #===============================================================================
     def getFileInfo( self, URL ):
-        """Get info about a file on the server"""
+        """Get mod-date, size, and URL for a file on the server"""
+
         restRequest = urllib2.Request(URL)
         restRequest.add_header("Cookie", "JSESSIONID=" + self.SessionId);
          
@@ -441,50 +607,54 @@ class getHCP:
     def getAssessorIDs( self ):
         """QC: Get assessor for subject and session"""
 
-        IDs = list()
-        SessionIDs = list()
-        SessionLabels = list()
-        Labels = list()
-        XnatIDs = list()
-        URIs = list()
-        XsiType = list()
-            
-        restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/assessors?format=csv'
-        restResults = self.getURLString(restURL)
-        
-        if (restResults != '404 Error'):
-        
-    #        AssessorSubjectSessionsList, AssessorDataTypeList = self.getSubjectSessions()
-            
-            restResultsSplit = restResults.split('\n')
-            restEndCount = restResults.count('\n')
-            restSessionHeader = restResultsSplit[0]
-            restSessionHeaderSplit = restSessionHeader.split(',')
-            
-            idIdx = restSessionHeaderSplit.index('"ID"')
-            sessionIdIdx = restSessionHeaderSplit.index('"session_ID"')
-            sessionLabelIdx = restSessionHeaderSplit.index('"session_label"')
-            xnatidIdx = restSessionHeaderSplit.index('"xnat:imageassessordata/id"')
-            labelIdx = restSessionHeaderSplit.index('"label"')
-            uriIdx = restSessionHeaderSplit.index('"URI"')
-            xsiTypeIdx = restSessionHeaderSplit.index('"xsiType"')
-            
-            for i in xrange(1, restEndCount):
-                currRow = restResultsSplit[i]
-                currRowSplit = currRow.split(',')
+        if (self.Server.find('intradb') > 0):
+            IDs = list()
+            SessionIDs = list()
+            SessionLabels = list()
+            Labels = list()
+            XnatIDs = list()
+            URIs = list()
+            XsiType = list()
                 
-                # need to call getSubjectSessions before this....
-                if (currRowSplit[xsiTypeIdx].replace('"', '').find(self.AssessorDataType) != -1):
+            restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/assessors?format=csv'
+            restResults = self.getURLString(restURL)
+            
+            if (restResults != '404 Error'):
+            
+        #        AssessorSubjectSessionsList, AssessorDataTypeList = self.getSubjectSessions()
                 
-                    IDs.append(currRowSplit[idIdx].replace('"', ''))
-                    SessionIDs.append(currRowSplit[sessionIdIdx].replace('"', ''))
-                    SessionLabels.append(currRowSplit[sessionLabelIdx].replace('"', ''))
-                    Labels.append(currRowSplit[labelIdx].replace('"', ''))
-                    XnatIDs.append(currRowSplit[xnatidIdx].replace('"', ''))
-                    URIs.append(currRowSplit[uriIdx].replace('"', ''))
-                    XsiType.append(currRowSplit[xsiTypeIdx].replace('"', ''))
+                restResultsSplit = restResults.split('\n')
+                restEndCount = restResults.count('\n')
+                restSessionHeader = restResultsSplit[0]
+                restSessionHeaderSplit = restSessionHeader.split(',')
                 
-        return Labels
+                idIdx = restSessionHeaderSplit.index('"ID"')
+                sessionIdIdx = restSessionHeaderSplit.index('"session_ID"')
+                sessionLabelIdx = restSessionHeaderSplit.index('"session_label"')
+                xnatidIdx = restSessionHeaderSplit.index('"xnat:imageassessordata/id"')
+                labelIdx = restSessionHeaderSplit.index('"label"')
+                uriIdx = restSessionHeaderSplit.index('"URI"')
+                xsiTypeIdx = restSessionHeaderSplit.index('"xsiType"')
+                
+                for i in xrange(1, restEndCount):
+                    currRow = restResultsSplit[i]
+                    currRowSplit = currRow.split(',')
+                    
+                    # need to call getSubjectSessions before this....
+                    if (currRowSplit[xsiTypeIdx].replace('"', '').find(self.AssessorDataType) != -1):
+                    
+                        IDs.append(currRowSplit[idIdx].replace('"', ''))
+                        SessionIDs.append(currRowSplit[sessionIdIdx].replace('"', ''))
+                        SessionLabels.append(currRowSplit[sessionLabelIdx].replace('"', ''))
+                        Labels.append(currRowSplit[labelIdx].replace('"', ''))
+                        XnatIDs.append(currRowSplit[xnatidIdx].replace('"', ''))
+                        URIs.append(currRowSplit[uriIdx].replace('"', ''))
+                        XsiType.append(currRowSplit[xsiTypeIdx].replace('"', ''))
+                    
+            return Labels
+        else:
+            print 'ERROR: Assessor data only on intradb.humanconnectome.org.'
+            return -1
     #===============================================================================
     def getAssessorOutputFile( self, AssessorIDs ):
         """QC: Get assessor output files as a list"""
@@ -554,11 +724,40 @@ class getHCP:
         orientation = scanParms.find('{http://nrg.wustl.edu/xnat}orientation').text
         FOV = scanParms.find('{http://nrg.wustl.edu/xnat}readoutSampleSpacing').text
         TR = scanParms.find('{http://nrg.wustl.edu/xnat}tr').text
-        TE = scanParms.find('{http://nrg.wustl.edu/xnat}te').text
+        
         flipAngle = scanParms.find('{http://nrg.wustl.edu/xnat}flip').text
         scanSequence = scanParms.find('{http://nrg.wustl.edu/xnat}scanSequence').text
         pixelBandwidth = scanParms.find('{http://nrg.wustl.edu/xnat}pixelBandwidth').text
-        echoSpacing = scanParms.find('{http://nrg.wustl.edu/xnat}echoSpacing').text
+        
+        # alt parms that are not present in all scan types...
+        try:
+            readoutDirection = scanParms.find('{http://nrg.wustl.edu/xnat}readoutDirection').text
+        except:
+            readoutDirection = 'NA'
+        try:
+            echoSpacing = scanParms.find('{http://nrg.wustl.edu/xnat}echoSpacing').text
+        except:
+            echoSpacing = 'NA'
+        try:
+            peDirection = scanParms.find('{http://nrg.wustl.edu/xnat}peDirection').text
+        except:
+            peDirection = 'NA'
+        try:
+            shimGroup = scanParms.find('{http://nrg.wustl.edu/xnat}shimGroup').text
+        except:
+            shimGroup = 'NA'
+        try:
+            seFieldMapGroup = scanParms.find('{http://nrg.wustl.edu/xnat}seFieldMapGroup').text
+        except:
+            seFieldMapGroup = 'NA'
+        try:
+            deltaTE = scanParms.find('{http://nrg.wustl.edu/xnat}deltaTE').text
+        except:
+            deltaTE = 'NA'
+        try:
+            TE = scanParms.find('{http://nrg.wustl.edu/xnat}te').text
+        except:
+            TE = 'NA'
         
         
         for addParms in scanParms.findall('{http://nrg.wustl.edu/xnat}addParam'):
@@ -570,8 +769,9 @@ class getHCP:
             if (addParmsAttrib.get('name') == 'Siemens GRADSPEC lOffset'):
                 LinOffset = addParms.text
         
-        scanParms = { 'SampleSpacing': sampleSpacing, 'alShimCurrent': alShimCurrent, 'LinearOffset':  LinOffset, 'AcquisitionTime': acquisitionTime, 'VoxelResolution': voxelResolution, \
-                            'Orientation': orientation, 'FOV': FOV, 'TR': TR, 'TE': TE, 'FlipAngle': flipAngle, 'ScanSequence': scanSequence, 'PixelBandwidth': pixelBandwidth, 'EchoSpacing': echoSpacing }
+        scanParms = { 'SampleSpacing': sampleSpacing, 'alShimCurrent': alShimCurrent, 'LinearOffset':  LinOffset, 'AcquisitionTime': acquisitionTime, 'VoxelResolution': voxelResolution, 'Orientation': orientation, \
+                            'FOV': FOV, 'TR': TR, 'TE': TE, 'FlipAngle': flipAngle, 'ScanSequence': scanSequence, 'PixelBandwidth': pixelBandwidth, 'ReadoutDirection': readoutDirection, 'EchoSpacing': echoSpacing, \
+                            'PhaseEncodingDir': peDirection, 'ShimGroup': shimGroup, 'SEFieldmapGroup': seFieldMapGroup, 'DeltaTE': deltaTE  }
         return scanParms
     #===============================================================================    
     def getScanMeta( self ):
@@ -581,15 +781,17 @@ class getHCP:
         Sizes = list()
         URIs = list()
         Collections = list()
+        FilePath = list()
         FileTags = list()
         FileFormats = list()
         FileContents = list()
+        FileReadable = list()
 
         if (not self.Scan):
             print 'Scan not defined...'
         else:
             restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/scans/' + self.Scan + '/files?format=csv&columns=ID,type,series_description,quality,xnat:mrSessionData/id'
-        
+
         restResults = self.getURLString(restURL)
         
         restResultsSplit = restResults.split('\n')
@@ -608,7 +810,6 @@ class getHCP:
         
         for j in xrange(1, restEndCount):
             currRow = restResultsSplit[j]
-            
             currRowSplit = currRow.split(',')
     
             Names.append(currRowSplit[nameIdx].replace('"', ''))
@@ -618,22 +819,68 @@ class getHCP:
             FileTags.append(currRowSplit[fileTagsIdx].replace('"', ''))
             FileFormats.append(currRowSplit[fileFormatIdx].replace('"', ''))
             FileContents.append(currRowSplit[fileContentIdx].replace('"', ''))
+        
+        # do the path query...    
+        restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/scans/' + self.Scan + '/files?format=csv&locator=absolutePath'
+        restResults = self.getURLString(restURL)
+        
+        restResultsSplit = restResults.split('\n')
+        restEndCount = restResults.count('\n')
+        restSessionHeader = restResultsSplit[0]
+        restSessionHeaderSplit = restSessionHeader.split(',')
+        
+        # ['"Name"', '"Size"', '"URI"', '"collection"', '"file_tags"', '"file_format"', '"file_content"', '"cat_ID"']
+        pathIdx = restSessionHeaderSplit.index('"absolutePath"')
+        
+        for j in xrange(1, restEndCount):
+            currRow = restResultsSplit[j]
+            currRowSplit = currRow.split(',')
+            FilePath.append(currRowSplit[pathIdx].replace('"', ''))
+            try:
+                FileObj = open(FilePath[-1], 'r')
+                # if readable:
+                FileReadable.append(True)
+            except IOError, e:
+                if self.Verbose:
+                    print 'getScanMeta(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
+                FileReadable.append(False)
             
-        ScanMeta = {'Names': Names, 'Bytes': Sizes, 'URIs': URIs, 'Collections': Collections}
+        ScanMeta = {'Names': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Collections': Collections, 'Format': FileFormats, 'Content': FileContents }
         return ScanMeta
-    
+
 #===============================================================================
 # WRITE
 #===============================================================================
-class writeHCP:
+class writeHCP(getHCP):
     """HCP Write Class"""
-    def __init__( self, DestinationDir  ):
+    def __init__( self, getHCP, DestinationDir  ):
         self.DestinationDir = DestinationDir
-        
-        
-    def writeFileFromURL( self, FileURI ):
+        self.Server = getHCP.Server
+        self.SessionId = getHCP.SessionId
+        self.Timeout = getHCP.Timeout
+        self.TimeoutMax = getHCP.TimeoutMax
+        self.TimeoutStep = getHCP.TimeoutStep
+        self.FileInfo = getHCP.FileInfo
+        self.Verbose = getHCP.Verbose
+    #===============================================================================
+    def getURLString(self, fileURL):
+        return super(writeHCP, self).getURLString(fileURL)
+    #===============================================================================
+    def getFileInfo(self, fileURL):
+        return super(writeHCP, self).getFileInfo(fileURL)
+    #===============================================================================
+    def writeFileFromURL( self, getHCP, FileURI, FileName ):
     
-        FileURIList = FileURI.split(',')
+        try:
+            FileURIList = FileURI.split(',')
+        except:
+            FileURIList = FileURI
+        try:
+            FileNameList = FileName.split(',')
+        except:
+            FileNameList = FileName
+
+        
         WriteCode = True
         if (self.DestinationDir[-1] != os.sep):
             self.DestinationDir = self.DestinationDir + os.sep
@@ -643,14 +890,21 @@ class writeHCP:
             
         for i in xrange(len(FileURIList)):
             currURI = FileURIList[i]
-            currFileName = os.path.basename(currURI)
+            currURISplit = currURI.split('/')
+            currFileNameIdx = currURISplit.index(os.path.basename(currURI))
+            currResrouceRootIdx = currURISplit.index('files')
+            
+            if (currFileNameIdx > currResrouceRootIdx + 1):
+                print 'More directory structure needed here'
                 
-            #===================================================================
-            # need getHCP class here...
-            #===================================================================
+            if (FileName == None):
+                currFileName = os.path.basename(currURI)
+            else:
+                currFileName = FileNameList[i]
+                
             fileURL = self.Server + currURI
             fileInfo = self.getFileInfo(fileURL)
-            fileResults = self.getURLString(fileURL)
+            fileResults = getHCP.getURLString(fileURL)
             
 #                WriteTotal = fileInfo.get('Bytes') + WriteTotal
             
@@ -673,12 +927,34 @@ class writeHCP:
                     WriteCode = False
                     
         return WriteCode
+    #===============================================================================
+    def writeFileFromPath( self, FilePathName, FileName ):
+        
+        FilePathNameList = FilePathName.split(',')
+        FileNameList = FileName.split(',')
+        WriteCode = True
+        if (self.DestinationDir[-1] != os.sep):
+            self.DestinationDir = self.DestinationDir + os.sep
+
+        if not os.path.exists(self.DestinationDir):
+            os.makedirs(self.DestinationDir)
+        
+        for i in xrange(len(FilePathNameList)):
+            currFilePathName = FilePathNameList[i]
+            if (FileName == None):
+                currFileName = os.path.basename(currFilePathName)
+            else:
+                currFileName = FileNameList[i]
+            
+            WriteCode = subprocess.call(('cp %s %s' % (currFilePathName, self.DestinationDir + currFileName)), shell=True)
+        
+        return WriteCode
 #===============================================================================
 # END CLASS DEFs
 #===============================================================================
-
+    
 if __name__ == "__main__":
-    getHCP(sys.argv[1], sys.argv[2], sys.argv[3])
+    pyHCP(sys.argv[1], sys.argv[2], sys.argv[3])
 
 
 

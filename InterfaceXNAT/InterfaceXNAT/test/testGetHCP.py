@@ -17,8 +17,9 @@ import time
 import xml.etree.ElementTree as ET
 
 #sys.path.append('..' +os.sep) 
-from pyHCP import getHCP
-from pyHCP import writeHCP
+from pyHCP import pyHCP, getHCP, writeHCP
+#from pyHCP import getHCP
+#from pyHCP import writeHCP
 
 sTime = time.time()
 
@@ -26,6 +27,7 @@ sTime = time.time()
 
 #===============================================================================
 # PARSE INPUT
+# -D C:\tmp\QC -U tony -P passfoo -W hcpx-demo.humanconnectome.org
 #===============================================================================
 parser = argparse.ArgumentParser(description="Program to figure out pipelines status via WORKFLOW XML...")
 # input...
@@ -121,21 +123,24 @@ SubjectList = list()
 #===============================================================================
 # init interface to server and get subjects if none input...
 #===============================================================================
-print "Running %s on %s" % (os.path.split(sys.argv[0])[1], socket.gethostname())
-print sys.path
+print "Running %s on %s with IP %s" % (os.path.split(sys.argv[0])[1], socket.gethostname(), socket.gethostbyname(socket.gethostname()))
+print sys.path[0]
 
-getHCP = getHCP(User, Password, Server)
+pyHCP = pyHCP(User, Password, Server)
+getHCP = getHCP(pyHCP)
 getHCP.Verbose = True
-getHCP.Project = 'ReleaseTest'
+if (getHCP.Server.find('intradb') != -1): 
+    getHCP.Scan = '2'
+    getHCP.Project = 'HCP_Phase2'
+else:
+    getHCP.Scan = '105'
+    getHCP.Project = 'HCP_Q1'
 
 DestinationDir = outputDir + os.sep
-writeHCP = writeHCP(DestinationDir)
-
-
-
+writeHCP = writeHCP(getHCP, DestinationDir)
 
 #===============================================================================
-# Setup output...
+# Setup subjects...
 #===============================================================================
 if (Subjects == None):
     getHCP.Subjects = getHCP.getSubjects()
@@ -149,24 +154,30 @@ elif (Subjects != None):
 # show usage of class...
 #===============================================================================
 if (showClassUsage):
-    
-#    getHCP.Project = 'HCP_Phase2'
+
     getHCP.Subject = getHCP.Subjects[0]
     getHCP.SubjectSessions = getHCP.getSubjectSessions()
+    getHCP.Session = getHCP.SubjectSessions.get('Sessions')[0]
     getHCP.SessionMeta = getHCP.getSessionMeta()
     
-    getHCP.Scan = '102'
+
+    ScanParms = getHCP.getScanParms()
     ScanMeta = getHCP.getScanMeta()
     print ScanMeta.get('URIs')[ScanMeta.get('Collections').index('NIFTI')]
-    writeHCP.writeFileFromURL(ScanMeta.get('URIs')[ScanMeta.get('Collections').index('NIFTI')])
+    writeHCP.writeFileFromURL(getHCP, ScanMeta.get('URIs')[ScanMeta.get('Collections').index('NIFTI')])
     
+    if (getHCP.Server.find('intradb') != -1):
+        AssessorIDs = getHCP.getAssessorIDs( )
+        AssessorFileURIList = getHCP.getAssessorOutputFile( AssessorIDs )
+        
+        
     print getHCP.getProjects()
-    print getHCP.SessionId
+    print getHCP.SessionId, getHCP.getSessionId()
     print getHCP.Subjects
     print getHCP.getSubjectSessions()
     
-    print getHCP.getFileInfo('https://intradb.humanconnectome.org/data/projects/HCP_Phase2/subjects/192439/experiments/192439_strc/resources/Details/files/StructuralHCP.log')
-    print 'Bytes: ' +getHCP.getFileInfo('https://intradb.humanconnectome.org/data/projects/HCP_Phase2/subjects/197550/experiments/197550_diff/resources/Diffusion/files/Diffusion/data/bvals').get('Bytes')
+#    print getHCP.getFileInfo('https://intradb.humanconnectome.org/data/projects/HCP_Phase2/subjects/192439/experiments/192439_strc/resources/Details/files/StructuralHCP.log')
+#    print 'Bytes: ' +getHCP.getFileInfo('https://intradb.humanconnectome.org/data/projects/HCP_Phase2/subjects/197550/experiments/197550_diff/resources/Diffusion/files/Diffusion/data/bvals').get('Bytes')
     print getHCP.getProjects()
     print getHCP.Session
     
