@@ -582,7 +582,7 @@ class getHCP(pyHCP):
                     print 'getScanMeta(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
                 FileReadable.append(False)
                 
-        ResourceMeta = {'Names': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Collections': Collections, 'Format': FileFormats, 'Contents': FileContents}
+        ResourceMeta = {'Name': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Label': Collections, 'Format': FileFormats, 'Contents': FileContents}
         return ResourceMeta
     #===============================================================================
     def getFileInfo( self, URL ):

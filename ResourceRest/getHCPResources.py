@@ -118,7 +118,8 @@ if (Resource is not None):
         ResourceMeta = getHCP.getResourceMeta()
         for i in xrange(0, len(ResourceMeta.get('Path'))):
             ResourceMetaList = ResourceMeta.get('Path')[i].split('/')
-#            ResourceMetaList.remove('')
+
+            
             if (ResourceRoot in ResourceMetaList):
                 FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
                 ResourceRestIdx = ResourceMetaList.index(ResourceRoot)

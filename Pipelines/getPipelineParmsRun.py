@@ -46,23 +46,25 @@ parser.add_argument("-Build", "--Build", dest="Build", default=None, type=str)
 parser.add_argument("-Production", "--Production", dest="iProduction", default=False, type=bool)
 
 
-parser.add_argument("-HCPid", "--HCPid", dest="iHCPid", default='HCPIntradb_E00000', type=str)
-parser.add_argument("-Label", "--Label", dest="iLabel", default='00', type=str)
-parser.add_argument("-FuncScanId", "--FuncScanId", dest="FuncScanId", default='00', type=str)
-parser.add_argument("-ScoutScanId", "--ScoutScanId", dest="iScoutScanId", default='00', type=str)
-parser.add_argument("-UnwarpDir", "--UnwarpDir", dest="iUnwarpDir", default='x', type=str)
-# structural...
-parser.add_argument("-StructSeries", "--SturctSeries", dest="iStructSeries", default='T1w_MPR1', type=str)
-parser.add_argument("-T1wScanId_1", "--T1wScanId_1", dest="iT1wScanId_1", default='00', type=str)
-parser.add_argument("-T1wScanId_2", "--T1wScanId_2", dest="iT1wScanId_2", default='00', type=str)
-parser.add_argument("-T2wScanId_1", "--T2wScanId_1", dest="iT2wScanId_1", default='00', type=str)
-parser.add_argument("-T2wScanId_2", "--T2wScanId_2", dest="iT2wScanId_2", default='00', type=str)
-parser.add_argument("-T1wSeriesDesc_1", "--T1wSeriesDesc_1", dest="iT1wSeriesDesc_1", default='T1w_MPR1', type=str)
-parser.add_argument("-T1wSeriesDesc_2", "--T1wSeriesDesc_2", dest="iT1wSeriesDesc_2", default='T1w_MPR2', type=str)
-parser.add_argument("-T2wSeriesDesc_1", "--T2wSeriesDesc_1", dest="iT2wSeriesDesc_1", default='T2w_SPC1', type=str)
-parser.add_argument("-T2wSeriesDesc_2", "--T2wSeriesDesc_2", dest="iT2wSeriesDesc_2", default='T2w_SPC2', type=str)
-# diffusion...
-parser.add_argument("-DiffSeries", "--DiffSeries", dest="iDiffSeries", default='DWI_RL_dir95', type=str)
+#===============================================================================
+# parser.add_argument("-HCPid", "--HCPid", dest="iHCPid", default='HCPIntradb_E00000', type=str)
+# parser.add_argument("-Label", "--Label", dest="iLabel", default='00', type=str)
+# parser.add_argument("-FuncScanId", "--FuncScanId", dest="FuncScanId", default='00', type=str)
+# parser.add_argument("-ScoutScanId", "--ScoutScanId", dest="iScoutScanId", default='00', type=str)
+# parser.add_argument("-UnwarpDir", "--UnwarpDir", dest="iUnwarpDir", default='x', type=str)
+# # structural...
+# parser.add_argument("-StructSeries", "--SturctSeries", dest="iStructSeries", default='T1w_MPR1', type=str)
+# parser.add_argument("-T1wScanId_1", "--T1wScanId_1", dest="iT1wScanId_1", default='00', type=str)
+# parser.add_argument("-T1wScanId_2", "--T1wScanId_2", dest="iT1wScanId_2", default='00', type=str)
+# parser.add_argument("-T2wScanId_1", "--T2wScanId_1", dest="iT2wScanId_1", default='00', type=str)
+# parser.add_argument("-T2wScanId_2", "--T2wScanId_2", dest="iT2wScanId_2", default='00', type=str)
+# parser.add_argument("-T1wSeriesDesc_1", "--T1wSeriesDesc_1", dest="iT1wSeriesDesc_1", default='T1w_MPR1', type=str)
+# parser.add_argument("-T1wSeriesDesc_2", "--T1wSeriesDesc_2", dest="iT1wSeriesDesc_2", default='T1w_MPR2', type=str)
+# parser.add_argument("-T2wSeriesDesc_1", "--T2wSeriesDesc_1", dest="iT2wSeriesDesc_1", default='T2w_SPC1', type=str)
+# parser.add_argument("-T2wSeriesDesc_2", "--T2wSeriesDesc_2", dest="iT2wSeriesDesc_2", default='T2w_SPC2', type=str)
+# # diffusion...
+# parser.add_argument("-DiffSeries", "--DiffSeries", dest="iDiffSeries", default='DWI_RL_dir95', type=str)
+#===============================================================================
 
 args = parser.parse_args()
 
@@ -79,25 +81,26 @@ Shadow = args.Shadow
 Build = args.Build
 #===============================================================================
 # DEPRICATED...
-iHCPid = args.iHCPid
-iLabel = args.iLabel
-FuncScanId = args.FuncScanId
-iScoutScanId = args.iScoutScanId
-iUnwarpDir = args.iUnwarpDir
-
-# structural...
-iStructSeries = args.iStructSeries
-iT1wScanId_1 = args.iT1wScanId_1
-iT1wScanId_2 = args.iT1wScanId_2
-iT2wScanId_1 = args.iT2wScanId_1
-iT2wScanId_2 = args.iT2wScanId_2
-iT1wSeriesDesc_1 = args.iT1wSeriesDesc_1
-iT1wSeriesDesc_2 = args.iT1wSeriesDesc_2 
-iT2wSeriesDesc_1 = args.iT2wSeriesDesc_1
-iT2wSeriesDesc_2 = args.iT2wSeriesDesc_2
-
-#diffusion...
-iDiffSeries = args.iDiffSeries
+#===============================================================================
+# iHCPid = args.iHCPid
+# iLabel = args.iLabel
+# FuncScanId = args.FuncScanId
+# iScoutScanId = args.iScoutScanId
+# iUnwarpDir = args.iUnwarpDir
+# 
+# # structural...
+# iStructSeries = args.iStructSeries
+# iT1wScanId_1 = args.iT1wScanId_1
+# iT1wScanId_2 = args.iT1wScanId_2
+# iT2wScanId_1 = args.iT2wScanId_1
+# iT2wScanId_2 = args.iT2wScanId_2
+# iT1wSeriesDesc_1 = args.iT1wSeriesDesc_1
+# iT1wSeriesDesc_2 = args.iT1wSeriesDesc_2 
+# iT2wSeriesDesc_1 = args.iT2wSeriesDesc_1
+# iT2wSeriesDesc_2 = args.iT2wSeriesDesc_2
+# 
+# #diffusion...
+# iDiffSeries = args.iDiffSeries
 #===============================================================================
 
 
@@ -473,8 +476,6 @@ for h in xrange(0, len(SubjectsList)):
         #=======================================================================
         elif (Pipeline == 'FunctionalHCP'):
                 
-                
-            # NOTE: not liking all the +/- 1 stuff here for ints v strings...
             if (FunctionalList.count(currSeries) == 1):
                 FuncScanId = idList[sessionMeta.get('Series').index(currSeries)]
                 FuncQuality = qualityList[sessionMeta.get('Series').index(currSeries)]
