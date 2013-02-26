@@ -387,15 +387,16 @@ for h in xrange(0, len(SubjectsList)):
             for j in xrange(0, len(seriesList)):
                 currSeriesDesc = seriesList[j]
                 currTypeList = typeList[j]
+                currQuality = qualityList[j]
                 if (currSeriesDesc in StructuralSeriesList): 
                     
                     StructuralSeriesDescScanIdDict[currSeriesDesc] = idList[j]
                     StructuralSeriesQualityDict[currSeriesDesc] = qualityList[j]
                     
                 # grab the fieldmap ids
-                if (currSeriesDesc.find('FieldMap_Magnitude') != -1) and (currTypeList.find('FieldMap') != -1): 
+                if (currSeriesDesc.find('FieldMap_Magnitude') != -1) and (currTypeList.find('FieldMap') != -1) and (currQuality in UsableList): 
                     MagScanId = idList[j]
-                if (currSeriesDesc.find('FieldMap_Phase') != -1) and (currTypeList.find('FieldMap') != -1): 
+                if (currSeriesDesc.find('FieldMap_Phase') != -1) and (currTypeList.find('FieldMap') != -1) and (currQuality in UsableList): 
                     PhaScanId = idList[j]
                 
         

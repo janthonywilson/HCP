@@ -123,7 +123,7 @@ class getHCP(pyHCP):
                         print 'URLError code: ' +str(e.reason)+ '. getSessionId Failed with wrong password.'
                         sys.exit(401)
                 except:
-                    print 'URL: %s failed because %s ' % (URL, e.reason)
+                    print 'URL: %s failed with code: %s ' % (URL, e.code)
                     sys.exit()
             except SSLError, e:
                 self.Timeout += self.TimeoutStep
@@ -166,7 +166,13 @@ class getHCP(pyHCP):
                     ReadResults = restConnHandle.read()
                     return ReadResults
                 except HTTPError, e:
-                    print 'HTTPError code: ' +str(e.code)+ '. File read timeout for ' +str(self.Timeout)+ ' seconds for ' +URL
+                    print 'READ HTTPError code: ' +str(e.code)+ '. File read timeout for ' +str(self.Timeout)+ ' seconds for ' +URL
+                except URLError, e:
+                    print 'READ URLError code: ' +str(e.reason)+ '. File read timeout for ' +str(self.Timeout)+' seconds for ' +URL
+                except SSLError, e:
+                    print 'READ SSLError code: ' +str(e.message)+ '. File read timeout for ' +str(self.Timeout)+' seconds for ' +URL
+                except socket.timeout:
+                    print 'READ Socket timed out. File read timeout for ' +str(self.Timeout)+ ' seconds for ' +URL
                     
         print 'ERROR: No reasonable timeout limit could be found for ' + URL
         sys.exit()
@@ -862,6 +868,9 @@ class writeHCP(getHCP):
         self.TimeoutStep = getHCP.TimeoutStep
         self.FileInfo = getHCP.FileInfo
         self.Verbose = getHCP.Verbose
+        
+        self.BytesStream = list()
+        self.BytesWrite = list()
     #===============================================================================
     def getURLString(self, fileURL):
         return super(writeHCP, self).getURLString(fileURL)
@@ -892,10 +901,17 @@ class writeHCP(getHCP):
             currURI = FileURIList[i]
             currURISplit = currURI.split('/')
             currFileNameIdx = currURISplit.index(os.path.basename(currURI))
-            currResrouceRootIdx = currURISplit.index('files')
+            currResrouceRootIdx = currURISplit.index('files') + 1
             
-            if (currFileNameIdx > currResrouceRootIdx + 1):
-                print 'More directory structure needed here'
+            if (currFileNameIdx > currResrouceRootIdx):
+#                print self.DestinationDir +os.sep.join(currURISplit[currResrouceRootIdx:currFileNameIdx])+os.sep
+                newDestinationDir = self.DestinationDir +os.sep.join(currURISplit[currResrouceRootIdx:currFileNameIdx])+os.sep
+                
+                if not os.path.exists(newDestinationDir):
+                    os.makedirs(newDestinationDir)
+            else:
+                newDestinationDir = self.DestinationDir
+
                 
             if (FileName == None):
                 currFileName = os.path.basename(currURI)
@@ -905,6 +921,7 @@ class writeHCP(getHCP):
             fileURL = self.Server + currURI
             fileInfo = self.getFileInfo(fileURL)
             fileResults = getHCP.getURLString(fileURL)
+            self.BytesStream.append(len(fileResults))
             
 #                WriteTotal = fileInfo.get('Bytes') + WriteTotal
             
@@ -912,26 +929,36 @@ class writeHCP(getHCP):
                 print 'WARNING: Expected ' +fileInfo.get('Bytes')+ ' bytes and downloaded ' +str(len(fileResults))+ ' bytes for file ' +currFileName
                 WriteCode = False
             else:
-                with open(self.DestinationDir + currFileName, 'wb') as outputFileId:
-                    writeCode = outputFileId.write(fileResults)
+                with open(newDestinationDir + currFileName, 'wb') as outputFileObj:
+                    writeCode = outputFileObj.write(fileResults)
                     if (self.Verbose):
-                        print 'File: ' +self.DestinationDir+currFileName+ '  Write Code: ' +str(writeCode)
-                    outputFileId.flush()
-                    os.fsync(outputFileId)
-                    outputFileId.close()
+                        print 'File: ' +newDestinationDir+currFileName+ '  Write Code: ' +str(writeCode)
+                    outputFileObj.flush()
+                    os.fsync(outputFileObj)
+                    outputFileObj.close()
                     
                 # check file size after write...
-                writeFileSize = os.path.getsize(self.DestinationDir + currFileName)
+                writeFileSize = os.path.getsize(newDestinationDir + currFileName)
+                self.BytesWrite.append(writeFileSize)
+                
                 if (fileInfo.get('Bytes') != str(writeFileSize)):
-                    print 'WARNING: WROTE ' +str(len(fileResults))+ ' bytes but expected ' +str(writeFileSize)+ ' bytes for file ' +self.DestinationDir+currFileName
+                    print 'WARNING: WROTE ' +str(len(fileResults))+ ' bytes but expected ' +str(writeFileSize)+ ' bytes for file ' +newDestinationDir+currFileName
                     WriteCode = False
                     
         return WriteCode
     #===============================================================================
     def writeFileFromPath( self, FilePathName, FileName ):
         
-        FilePathNameList = FilePathName.split(',')
-        FileNameList = FileName.split(',')
+        try:
+            FilePathNameList = FilePathName.split(',')
+        except:
+            FilePathNameList = FilePathName
+            
+        try:
+            FileNameList = FileName.split(',')
+        except:
+            FileNameList = FileName
+       
         WriteCode = True
         if (self.DestinationDir[-1] != os.sep):
             self.DestinationDir = self.DestinationDir + os.sep
@@ -941,12 +968,26 @@ class writeHCP(getHCP):
         
         for i in xrange(len(FilePathNameList)):
             currFilePathName = FilePathNameList[i]
+            
+            currFilePathNameSplit = currFilePathName.split('/')
+            currFileNameIdx = currFilePathNameSplit.index(os.path.basename(currFilePathName))
+            currResrouceRootIdx = currFilePathNameSplit.index('RESOURCES') + 1
+            
+            if (currFileNameIdx > currResrouceRootIdx):
+                print self.DestinationDir +os.sep.join(currFilePathNameSplit[currResrouceRootIdx:currFileNameIdx])+os.sep
+                newDestinationDir = self.DestinationDir +os.sep.join(currFilePathNameSplit[currResrouceRootIdx:currFileNameIdx])+os.sep
+                
+                if not os.path.exists(newDestinationDir):
+                    os.makedirs(newDestinationDir)
+            else:
+                newDestinationDir = self.DestinationDir
+            
             if (FileName == None):
                 currFileName = os.path.basename(currFilePathName)
             else:
                 currFileName = FileNameList[i]
             
-            WriteCode = subprocess.call(('cp %s %s' % (currFilePathName, self.DestinationDir + currFileName)), shell=True)
+            WriteCode = subprocess.call(('cp %s %s' % (currFilePathName, newDestinationDir + currFileName)), shell=True)
         
         return WriteCode
 #===============================================================================

@@ -24,6 +24,8 @@ sTime = time.time()
 # -User tony -Password passfoo -Server intradb.humanconnectome.org -Project HCP_Phase2 -Subject 100307 -Session 100307_strc -Scan 19 -FileType NIFTI -OutputDir C:\tmp\HCP -Strip None
 # -User tony -Password passfoo -Server hcpx-dev-cuda00.nrg.mir -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Scan 108 -FileType NIFTI -OutputDir /home/NRG/jwilso01/tmp/HCP -Strip 3T
 # -User tony -Password passfoo -Server hcpx-demo3.humanconnectome.org -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource tfMRI_WM_RL_unproc -FileType NIFTI -OutputDir C:\tmp\HCP -Strip None
+# -User tony -Password passfoo -Server hcpx-dev-cuda00.nrg.mir -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource tfMRI_WM_RL_unproc -ResourceRoot LINKED_DATA -FileType NIFTI,TXT -OutputDir C:\tmp\HCP -Strip None
+# -User tony -Password passfoo -Server hcpx-demo.humanconnectome.org -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource tfMRI_WM_RL_unproc -ResourceRoot tfMRI_WM_RL_unproc -OutputDir C:\tmp\HCP -Strip None
 #===============================================================================
 parser = argparse.ArgumentParser(description="Program to get files from resources for HCP pipelines...")
 # input...
@@ -56,7 +58,7 @@ Project = args.Project
 Subject = args.Subject
 Session = args.Session
 Scan = args.Scan
-FileType = args.FileType.split(',')
+FileType = args.FileType
 Server = args.Server
 Resource = args.Resource
 ResourceRoot = args.ResourceRoot
@@ -64,11 +66,26 @@ StripSession = args.StripSession
 if (StripSession == 'None'): StripSession = None
 
 OutputFile = args.OutputFile
-OutputDir = os.path.normpath(args.OutputDir)+os.sep
+OutputDir = args.OutputDir
 OutputDirFile = args.OutputDirFile
 
+if (OutputDir is not None):
+    OutputDir = os.path.normpath(OutputDir)+os.sep
+else:
+    print 'ERROR: Output directory not specified.'
+    sys.exit()
+    
 if (OutputDirFile is not None):
     OutputDirFile = os.path.normpath(args.OutputDirFile)
+elif (OutputDir is None) and (OutputDirFile is None):
+    print 'ERROR: No output directory location specified.'
+    sys.exit()
+    
+if (FileType is not None) and (FileType.find(',') != -1):
+    FileType = FileType.split(',')
+    
+if (ResourceRoot is None):
+    ResourceRoot = Resource
     
 if not os.path.exists(OutputDir):
     os.makedirs(OutputDir)
@@ -85,13 +102,15 @@ getHCP.Subject = Subject
 getHCP.Session = Session
 getHCP.Scan = Scan
 
+FilePathNameReadable = list()
+
 if (Resource is not None):
     #===========================================================================
     # not complete, may finish later if management bitches about "resources"
     #===========================================================================
     FileName = None
     FilePathsNames = list()
-    FilePathNameReadable = list()
+    
     
     SubjectResources = getHCP.getSubjectResourcesMeta()
     if (Resource in SubjectResources.get('Label')):
@@ -108,6 +127,9 @@ if (Resource is not None):
                     FilePathsNames.append(ResourceMeta.get('Path')[i])
                 else:
                     FilePathsNames.append(ResourceMeta.get('URI')[i])
+            else:
+                print 'ERROR: %s is not in %s.' % (ResourceRoot, ResourceMeta.get('Path')[i])
+                sys.exit()
                     
 #        CollectionsIdx = [i for i, x in enumerate(ResourceMeta.get('Format')) if x == FileType]
     else:
@@ -117,8 +139,8 @@ if (Resource is not None):
 else:
     ScanMeta = getHCP.getScanMeta()
     CollectionsIdx = ScanMeta.get('Format').index(FileType)
-    FilePathNameReadable = ScanMeta.get('Readable')[CollectionsIdx]
-    if FilePathNameReadable:
+    FilePathNameReadable.append(ScanMeta.get('Readable')[CollectionsIdx])
+    if ScanMeta.get('Readable')[CollectionsIdx]:
         FilePathsNames = ScanMeta.get('Path')[CollectionsIdx]
     else:
         FilePathsNames = ScanMeta.get('URI')[CollectionsIdx]
@@ -144,14 +166,16 @@ else:
         OutputDirFile = OutputDir + FileName
                 
 if all(FilePathNameReadable):
-    print ('cp %s %s' % (FilePathsNames, OutputDirFile))
+    print ('cp %s %s' % (FilePathsNames, OutputDir))
     writeHCP.writeFileFromPath(FilePathsNames, FileName)
 else:
-    print ('URI: %s  Destination: %s' % (FilePathsNames, OutputDirFile))
+    print ('Destination: %s  URI: %s' % (OutputDir, FilePathsNames))
     writeHCP.writeFileFromURL(getHCP, FilePathsNames, FileName)
     
-    
-    
+
+print 'Streamed bytes: ' + ', '.join(map(str, writeHCP.BytesStream))
+print 'Written bytes: ' + ', '.join(map(str, writeHCP.BytesWrite))
+print("Duration: %s" % (time.time() - sTime))
     
     
     
