@@ -7,8 +7,11 @@ Created on 2013-02-19
 import os
 import sys
 import socket
+import operator
 import argparse
+import itertools
 import subprocess
+
 # Time manipulation...
 import time
 # HCP interface class...
@@ -34,7 +37,8 @@ parser.add_argument("-Password", "--Password", dest="Password", type=str)
 parser.add_argument("-Project", "--Project", dest="Project", type=str, default=None, help="pick project")
 parser.add_argument("-Subject", "--Subject", dest="Subject", type=str, default=None, help="pick subject")
 parser.add_argument("-Package", "--Package", dest="Package", type=str, default=None, help="pick package")
-parser.add_argument("-PackageRoot", "--PackageRoot", dest="PackageRoot", type=str, default=None, help="pick package root")
+parser.add_argument("-FunctionalSeries", "--FunctionalSeries", dest="FunctSeries", type=str, default=None, help="pick functional series")
+#parser.add_argument("-PackageRoot", "--PackageRoot", dest="PackageRoot", type=str, default=None, help="pick package root")
 parser.add_argument("-Strip", "--Strip", dest="StripSession", type=str, default=None, help="strip session information")
 # remote...
 parser.add_argument("-Server", "--Server", dest="Server", type=str, default="https://intradb.humanconnectome.org", help="pick server")
@@ -56,7 +60,9 @@ Password = args.Password
 Project = args.Project
 Subject = args.Subject
 Package = args.Package
-PackageRoot = args.PackageRoot
+#PackageRoot = args.PackageRoot
+
+FunctSeries = args.FunctSeries
 
 
 
@@ -89,19 +95,14 @@ print "Running %s on %s with IP %s" % (os.path.split(sys.argv[0])[1], socket.get
 pyHCP = pyHCP(User, Password, Server)
 getHCP = getHCP(pyHCP)
 writeHCP = writeHCP(getHCP, OutputDir)
+writeHCP.Flatten = False
 
 getHCP.Project = Project
 getHCP.Subject = Subject
 
 SubjectResourcesMeta = getHCP.getSubjectResourcesMeta()
 
-#getHCP.Session = '100307_strc'
-#getHCP.Resource = 'Details' || 'Strcutrual_preproc'
-#ResourceMeta = getHCP.getResourceMeta()
-#for i in xrange(0,len(ResourceMeta.get('Path'))): print ResourceMeta.get('Path')[i]
-
 FileName = list()
-
 FileURIName = list()
 FilePathName = list()
 FilePathNameReadable = list()
@@ -110,14 +111,14 @@ FilePathNameReadable = list()
 #===============================================================================
 if (Package == 'Structural'):
     
-    if (Server.find('intradb') != -1):
+    if (Server.find('intradb') != -1) or (Server.find('hcpi') != -1):
         ResourceRoot = 'Details'
     else:
         ResourceRoot = 'Structural_preproc'
         
     getHCP.Resource = ResourceRoot
     getHCP.Session = SubjectResourcesMeta.get('Session')[SubjectResourcesMeta.get('Label').index(ResourceRoot)]
-    ResourceMeta = getHCP.getResourceMeta()
+    ResourceMeta = getHCP.getSubjectResourceMeta()
     
     SourceDir = 'T1w'
     T1wList = list()
@@ -179,10 +180,45 @@ if (Package == 'Structural'):
 #===============================================================================
 elif (Package == 'Diffusion'):
     
-    if (Server.find('intradb') != -1):
+    if (Server.find('intradb') != -1) or (Server.find('hcpi') != -1):
         ResourceRoot = 'Diffusion'
     else:
         ResourceRoot = 'Diffusion_preproc'
+        
+    getHCP.Resource = ResourceRoot
+    getHCP.Session = SubjectResourcesMeta.get('Session')[SubjectResourcesMeta.get('Label').index(ResourceRoot)]
+    ResourceMeta = getHCP.getSubjectResourceMeta()
+        
+    SourceDir = 'Diffusion/data'
+    DataList = list()
+    DataList.append('%s/%s/bvals' % (ResourceRoot, SourceDir))
+    DataList.append('%s/%s/bvecs' % (ResourceRoot, SourceDir))
+    DataList.append('%s/%s/data.nii.gz' % (ResourceRoot, SourceDir))
+    DataList.append('%s/%s/nodif_brain_mask.nii.gz' % (ResourceRoot, SourceDir))
+    DataList.append('%s/%s/grad_dev.nii.gz' % (ResourceRoot, SourceDir))
+
+    
+    SourceDir = 'T1w/xfms'
+    T1wXfmList = list()
+    T1wXfmList.append('%s/%s/diff2str.mat' % (ResourceRoot, SourceDir))
+    T1wXfmList.append('%s/%s/str2diff.mat' % (ResourceRoot, SourceDir))
+    
+    SourceDir = 'MNINonLinear/xfms'
+    MNIXfmList = list()
+    MNIXfmList.append('%s/%s/diff2standard.nii.gz' % (ResourceRoot, SourceDir))
+    MNIXfmList.append('%s/%s/standard2diff.nii.gz' % (ResourceRoot, SourceDir))
+    
+    AllList = DataList + T1wXfmList + MNIXfmList
+  
+    for i in xrange(0, len(ResourceMeta.get('Path'))):
+        for j in xrange(0, len(AllList)):
+            if (ResourceMeta.get('Path')[i].find(AllList[j]) != -1) and (ResourceMeta.get('Path')[i] not in FilePathName):
+                FileName.append(ResourceMeta.get('Name')[i])
+                FilePathName.append(ResourceMeta.get('Path')[i])
+                FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
+                
+                FileURIName.append(ResourceMeta.get('URI')[i])
+
 #===============================================================================
 # FUNCTIONAL...
 #===============================================================================
@@ -193,6 +229,65 @@ elif (Package == 'Functional'):
     else:
         ResourceRoot = 'Functional_preproc'
 #===============================================================================
+# FIX...
+#===============================================================================
+#${SubjectID}/MNINonLinear/Results/${fMRIName}/${fMRIName}_hp2000_clean.nii.gz
+#${SubjectID}/MNINonLinear/Results/${fMRIName}/${fMRIName}_Atlas_hp2000_clean.dtseries.nii
+#
+#${SubjectID}/MNINonLinear/Results/${fMRIName}/${fMRIName}_hp2000.ica/.fix
+#${SubjectID}/MNINonLinear/Results/${fMRIName}/${fMRIName}_hp2000.ica/fix4melview_HCP_hp2000_thr5.txt
+#${SubjectID}/MNINonLinear/Results/${fMRIName}/${fMRIName}_hp2000.ica/filtered_func_data.ica/*
+#===============================================================================
+elif (Package == 'FIX'):
+
+    if (Server.find('intradb') != -1) or (Server.find('hcpi') != -1):
+        ResourceRoot = 'FIX'
+    else:
+        ResourceRoot = 'FIX_preproc'
+        
+    getHCP.Resource = ResourceRoot
+    getHCP.Session = SubjectResourcesMeta.get('Session')[SubjectResourcesMeta.get('Label').index(ResourceRoot)]
+    ResourceMeta = getHCP.getSubjectResourceMeta()
+#    print '\n'.join(ResourceMeta.get('Path'))
+    
+    SourceDir = '%s/%s' % (ResourceRoot, FunctSeries)
+    FIXList = list()
+    FIXList.append('%s/%s_hp2000_clean.nii.g' % (SourceDir, FunctSeries))
+    FIXList.append('%s/%s_Atlas_hp2000_clean.dtseries.nii' % (SourceDir, FunctSeries))
+    
+    SourceDir = '%s/%s/%s_hp2000.ica' % (ResourceRoot, FunctSeries, FunctSeries)
+    FIXList.append('%s/.fix' % (SourceDir))
+    FIXList.append('%s/fix4melview_HCP_hp2000_thr5.txt' % (SourceDir))
+    
+    # SourceFile = 'ALL'
+    SourceDir = '%s/%s/%s_hp2000.ica/filtered_func_data.ica' % (ResourceRoot, FunctSeries, FunctSeries)
+    FIXAllList = list()
+    FIXAllList.append('%s/' % (SourceDir))
+    SourceDir = '%s/%s/%s_hp2000.ica/filtered_func_data.ica/stats' % (ResourceRoot, FunctSeries, FunctSeries)
+    FIXAllList.append('%s/' % (SourceDir))
+    SourceDir = '%s/%s/%s_hp2000.ica/filtered_func_data.ica/report' % (ResourceRoot, FunctSeries, FunctSeries)
+    FIXAllList.append('%s/' % (SourceDir))
+    
+    
+    for i in xrange(0, len(ResourceMeta.get('Path'))):
+        for j in xrange(0, len(FIXList)):
+            if (ResourceMeta.get('Path')[i].find(FIXList[j]) != -1) and (ResourceMeta.get('Path')[i] not in FilePathName):
+                FileName.append(ResourceMeta.get('Name')[i])
+                FilePathName.append(ResourceMeta.get('Path')[i])
+                FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
+                
+                FileURIName.append(ResourceMeta.get('URI')[i])
+        # SourceList/* has stronger constraint, thus .find(SourceList[j]+ResourceMeta.get('Name')[i]), without this a list all subdirs deep would be generated.
+        for j in xrange(0, len(FIXAllList)):
+            if (ResourceMeta.get('Path')[i].find(FIXAllList[j]+ResourceMeta.get('Name')[i]) != -1) and (ResourceMeta.get('Path')[i] not in FilePathName):
+                ResourceMetaPathSplit = ResourceMeta.get('Path')[i].split('/')
+                FileName.append(ResourceMeta.get('Name')[i])
+                FilePathName.append(ResourceMeta.get('Path')[i])
+                FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
+                
+                FileURIName.append(ResourceMeta.get('URI')[i])
+
+#===============================================================================
 # END...NOW PRINT
 #===============================================================================        
         
@@ -202,14 +297,16 @@ elif (Package == 'Functional'):
 #    print FilePathName[i]
     
 if all(FilePathNameReadable):
-    print ('cp %s %s' % (FilePathName, OutputDir))
+    print ('cp %s %s' % (OutputDir, FilePathName))
     writeHCP.writeFileFromPath(FilePathName, FileName)
 else:
-    print ('Destination: %s  URI: %s' % (OutputDir, FilePathName))
+    print ('Destination: %s  URI: %s' % (OutputDir, FileURIName))
     writeHCP.writeFileFromURL(getHCP, FileURIName, FileName)
+    print 'Streamed bytes: ' + ', '.join(map(str, writeHCP.BytesStream))
     
-print 'Streamed bytes: ' + ', '.join(map(str, writeHCP.BytesStream))
+
 print 'Written bytes: ' + ', '.join(map(str, writeHCP.BytesWrite))
+print 'Delta bytes: ' + ', '.join(map(str, list(itertools.imap(operator.sub, writeHCP.BytesStream, writeHCP.BytesWrite))))
 print("Duration: %s" % (time.time() - sTime))
 
     

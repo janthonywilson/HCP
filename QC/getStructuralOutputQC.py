@@ -14,8 +14,9 @@ import time
 # Web stuff...
 import socket
 
-#sys.path.append('..' +os.sep+ 'InterfaceXNAT' +os.sep+ 'InterfaceXNAT') 
-from getHCP import getHCP
+from pyHCP import pyHCP, getHCP, writeHCP
+
+
 
 
 sTime = time.time()
@@ -43,7 +44,7 @@ User = args.iUser
 Password = args.iPassword
 inputSubjects = args.inputSubjects
     
-outputDir = os.path.normpath(args.outputDir)
+OutputDir = os.path.normpath(args.outputDir)
 
 inputProject = args.inputProject
 Server = args.WebServer
@@ -95,10 +96,12 @@ def fPrintTabList( outputDirFile, headerStr, *args ):
 # init interface to server and get subjects if none input...
 #===============================================================================
 print "Running %s on %s" % (os.path.split(sys.argv[0])[1], socket.gethostname())
-getHCP = getHCP(User, Password, Server)
+
+pyHCP = pyHCP(User, Password, Server)
+getHCP = getHCP(pyHCP)
+writeHCP = writeHCP(getHCP, OutputDir)
 
 getHCP.Verbose = True
-getHCP.DestinationDir = outputDir + os.sep
 getHCP.Project = 'HCP_Phase2'
 
 
@@ -130,7 +133,8 @@ for i in xrange(0, len(inputSubjectsList)):
     print i, getHCP.Subject
     getHCP.Session = getHCP.Subject + '_strc'
     getHCP.SessionType = 'Structural'
-    getHCP.AssessorDataType = 'qcAssessmentData'
+#    getHCP.AssessorDataType = 'qcAssessmentData'
+    AssessorIDs = getHCP.getAssessorIDs( )
 
     currSessions, currSessionType = getHCP.getSubjectSessions()
     StrcIdx = [k for k, element in enumerate(currSessionType) if element == 'strc']

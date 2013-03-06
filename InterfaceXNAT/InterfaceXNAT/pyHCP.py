@@ -75,7 +75,10 @@ class getHCP(pyHCP):
         self.Subjects = []
         self.SubjectSessions = []
         self.SubjectSessionsUniq = []
+        self.SubjectResourceMeta = {}
         self.SubjectResourcesMeta = {}
+        
+        self.AssessorDataType = ''
         
         self.Scan = ''
         self.Scans = []
@@ -85,9 +88,7 @@ class getHCP(pyHCP):
         
         self.FileInfo = {}
         self.ScanMeta = {}
-        self.ResourceMeta = {}
         
-    #        self.SessionId = 'BE07716A225958F2FDD51D26E0D26449'
         self.SessionId = self.getSessionId()
     #===============================================================================
     def getSessionId( self ):
@@ -414,6 +415,7 @@ class getHCP(pyHCP):
         return Quality, ScanIds, Series, Sessions, ScanType
     #===============================================================================
     def getSubjectResourcesMeta(self):
+        """Get file info about ALL resources for a subject"""
         
         ResourceHeader = list()
         FileNames = list()
@@ -429,7 +431,6 @@ class getHCP(pyHCP):
         SubjectSessions = list(set(self.getSubjectSessions().get('Sessions')))
     
         for i in range(0, len(SubjectSessions)):
-    #        restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/scans?format=csv&columns=ID,type,series_description,quality,xnat:mrSessionData/id'
             restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + SubjectSessions[i] + '/resources?format=csv'
             if self.Verbose: print restURL
             
@@ -455,7 +456,7 @@ class getHCP(pyHCP):
                     currLabel = currRowSplit[labelIdx].replace('"', '')
         
                     #===========================================================
-                    # all this nonsense should be replaced with a call to getResourceMeta()
+                    # all this nonsense should be replaced with a call to getSubjectResourceMeta()
                     #===========================================================
                     restURL = self.Server +'data/projects/'+ self.Project +'/subjects/'+ self.Subject +'/experiments/'+ SubjectSessions[i] +'/resources/'+ currLabel +'/files?format=csv'
                     restResults = self.getURLString(restURL)
@@ -485,7 +486,9 @@ class getHCP(pyHCP):
                         FileSessions.append(SubjectSessions[i].replace('"', ''))
                         FileLabels.append(currLabel.replace('"', ''))
                         
-                    # do the path query...    
+                    #===========================================================
+                    # do the path query and check readability...    
+                    #===========================================================
                     restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + SubjectSessions[i] + '/resources/' + currLabel + '/files?format=csv&locator=absolutePath'
                     newRestResults = self.getURLString(restURL)
         
@@ -507,14 +510,14 @@ class getHCP(pyHCP):
                             FileReadable.append(True)
                         except IOError, e:
                             if self.Verbose:
-                                print 'getSubjectResources(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
+                                print 'getSubjectResourcesMeta(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
                             FileReadable.append(False)
-        
-        SubjectResources = { 'Name': FileNames, 'URI': FileURIs, 'Session': FileSessions, 'Label': FileLabels, 'Content': FileContents, 'Format': FileFormats, 'Path': FilePath, 'Readable': FileReadable }
-        return SubjectResources
+
+        SubjectResourcesMeta = { 'Name': FileNames, 'URI': FileURIs, 'Session': FileSessions, 'Label': FileLabels, 'Content': FileContents, 'Format': FileFormats, 'Path': FilePath, 'Readable': FileReadable }
+        return SubjectResourcesMeta
     #===============================================================================  
-    def getResourceMeta(self):
-        """Get file info about a given resource"""
+    def getSubjectResourceMeta(self):
+        """Get file info about a given resource for a subject"""
         
         Names = list()
         Sizes = list()
@@ -582,8 +585,8 @@ class getHCP(pyHCP):
                     print 'getScanMeta(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
                 FileReadable.append(False)
                 
-        ResourceMeta = {'Name': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Label': Collections, 'Format': FileFormats, 'Contents': FileContents}
-        return ResourceMeta
+        SubjectResourceMeta = {'Name': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Label': Collections, 'Format': FileFormats, 'Contents': FileContents}
+        return SubjectResourceMeta
     #===============================================================================
     def getFileInfo( self, URL ):
         """Get mod-date, size, and URL for a file on the server"""
@@ -613,6 +616,10 @@ class getHCP(pyHCP):
     def getAssessorIDs( self ):
         """QC: Get assessor for subject and session"""
 
+        if not (self.Project) or not (self.Subject) or not (self.Session) or not (self.AssessorDataType):
+            print 'getAssessorIDs() Requirements: \n Project: %s \n Subject: %s \n Session: %s \n AssessorDataType: %s ' % (self.Project, self.Subject, self.Session, self.AssessorDataType) 
+            return False
+        
         if (self.Server.find('intradb') > 0):
             IDs = list()
             SessionIDs = list()
@@ -647,6 +654,7 @@ class getHCP(pyHCP):
                     currRowSplit = currRow.split(',')
                     
                     # need to call getSubjectSessions before this....
+                    # self.AssessorDataType = 'qcAssessmentData'
                     if (currRowSplit[xsiTypeIdx].replace('"', '').find(self.AssessorDataType) != -1):
                     
                         IDs.append(currRowSplit[idIdx].replace('"', ''))
@@ -851,7 +859,7 @@ class getHCP(pyHCP):
                     print 'getScanMeta(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
                 FileReadable.append(False)
             
-        ScanMeta = {'Names': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Collections': Collections, 'Format': FileFormats, 'Content': FileContents }
+        ScanMeta = {'Name': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Collections': Collections, 'Format': FileFormats, 'Content': FileContents }
         return ScanMeta
 
 #===============================================================================
@@ -868,9 +876,11 @@ class writeHCP(getHCP):
         self.TimeoutStep = getHCP.TimeoutStep
         self.FileInfo = getHCP.FileInfo
         self.Verbose = getHCP.Verbose
+        self.Flatten = False
         
         self.BytesStream = list()
         self.BytesWrite = list()
+        
     #===============================================================================
     def getURLString(self, fileURL):
         return super(writeHCP, self).getURLString(fileURL)
@@ -903,12 +913,12 @@ class writeHCP(getHCP):
             currFileNameIdx = currURISplit.index(os.path.basename(currURI))
             currResrouceRootIdx = currURISplit.index('files') + 1
             
-            if (currFileNameIdx > currResrouceRootIdx):
-#                print self.DestinationDir +os.sep.join(currURISplit[currResrouceRootIdx:currFileNameIdx])+os.sep
-                newDestinationDir = self.DestinationDir +os.sep.join(currURISplit[currResrouceRootIdx:currFileNameIdx])+os.sep
-                
-                if not os.path.exists(newDestinationDir):
-                    os.makedirs(newDestinationDir)
+            if not self.Flatten:
+                if (currFileNameIdx > currResrouceRootIdx):
+                    newDestinationDir = self.DestinationDir +os.sep.join(currURISplit[currResrouceRootIdx:currFileNameIdx])+os.sep
+                    
+                    if not os.path.exists(newDestinationDir):
+                        os.makedirs(newDestinationDir)
             else:
                 newDestinationDir = self.DestinationDir
 
@@ -920,30 +930,39 @@ class writeHCP(getHCP):
                 
             fileURL = self.Server + currURI
             fileInfo = self.getFileInfo(fileURL)
-            fileResults = getHCP.getURLString(fileURL)
-            self.BytesStream.append(len(fileResults))
-            
-#                WriteTotal = fileInfo.get('Bytes') + WriteTotal
-            
-            if (fileInfo.get('Bytes') != str(len(fileResults))):
-                print 'WARNING: Expected ' +fileInfo.get('Bytes')+ ' bytes and downloaded ' +str(len(fileResults))+ ' bytes for file ' +currFileName
-                WriteCode = False
-            else:
-                with open(newDestinationDir + currFileName, 'wb') as outputFileObj:
-                    writeCode = outputFileObj.write(fileResults)
-                    if (self.Verbose):
-                        print 'File: ' +newDestinationDir+currFileName+ '  Write Code: ' +str(writeCode)
-                    outputFileObj.flush()
-                    os.fsync(outputFileObj)
-                    outputFileObj.close()
-                    
-                # check file size after write...
-                writeFileSize = os.path.getsize(newDestinationDir + currFileName)
-                self.BytesWrite.append(writeFileSize)
+            try:
+                fileSize = os.path.getsize(newDestinationDir + currFileName)
+            except:
+                fileSize = 0
                 
-                if (fileInfo.get('Bytes') != str(writeFileSize)):
-                    print 'WARNING: WROTE ' +str(len(fileResults))+ ' bytes but expected ' +str(writeFileSize)+ ' bytes for file ' +newDestinationDir+currFileName
+            if (fileInfo.get('Bytes') != str(fileSize)):
+            
+                fileResults = getHCP.getURLString(fileURL)
+                self.BytesStream.append(len(fileResults))
+                
+                if (fileInfo.get('Bytes') != str(len(fileResults))):
+                    print 'WARNING: Expected ' +fileInfo.get('Bytes')+ ' bytes and downloaded ' +str(len(fileResults))+ ' bytes for file ' +currFileName
                     WriteCode = False
+                else:
+                    with open(newDestinationDir + currFileName, 'wb') as outputFileObj:
+                        writeCode = outputFileObj.write(fileResults)
+                        if (self.Verbose):
+                            print 'File: ' +newDestinationDir+currFileName+ '  Write Code: ' +str(writeCode)
+                        outputFileObj.flush()
+                        os.fsync(outputFileObj)
+                        outputFileObj.close()
+                        
+                    # check file size after write...
+                    writeFileSize = os.path.getsize(newDestinationDir + currFileName)
+                    self.BytesWrite.append(writeFileSize)
+                    
+                    if (fileInfo.get('Bytes') != str(writeFileSize)):
+                        print 'WARNING: WROTE ' +str(len(fileResults))+ ' bytes but expected ' +str(writeFileSize)+ ' bytes for file ' +newDestinationDir+currFileName
+                        WriteCode = False
+            else:
+                print 'File %s already exists...' % (newDestinationDir + currFileName)
+                self.BytesStream.append(0)
+                self.BytesWrite.append(0)
                     
         return WriteCode
     #===============================================================================
@@ -971,14 +990,18 @@ class writeHCP(getHCP):
             
             currFilePathNameSplit = currFilePathName.split('/')
             currFileNameIdx = currFilePathNameSplit.index(os.path.basename(currFilePathName))
-            currResrouceRootIdx = currFilePathNameSplit.index('RESOURCES') + 1
+            try: 
+                currResourceRootIdx = currFilePathNameSplit.index('RESOURCES') + 1
+            except:
+                currResourceRootIdx = currFileNameIdx
             
-            if (currFileNameIdx > currResrouceRootIdx):
-                print self.DestinationDir +os.sep.join(currFilePathNameSplit[currResrouceRootIdx:currFileNameIdx])+os.sep
-                newDestinationDir = self.DestinationDir +os.sep.join(currFilePathNameSplit[currResrouceRootIdx:currFileNameIdx])+os.sep
-                
-                if not os.path.exists(newDestinationDir):
-                    os.makedirs(newDestinationDir)
+            if not self.Flatten:
+                if (currFileNameIdx > currResourceRootIdx):
+#                    print self.DestinationDir +os.sep.join(currFilePathNameSplit[currResourceRootIdx:currFileNameIdx])+os.sep
+                    newDestinationDir = self.DestinationDir +os.sep.join(currFilePathNameSplit[currResourceRootIdx:currFileNameIdx])+os.sep
+                    
+                    if not os.path.exists(newDestinationDir):
+                        os.makedirs(newDestinationDir)
             else:
                 newDestinationDir = self.DestinationDir
             
@@ -988,6 +1011,7 @@ class writeHCP(getHCP):
                 currFileName = FileNameList[i]
             
             WriteCode = subprocess.call(('cp %s %s' % (currFilePathName, newDestinationDir + currFileName)), shell=True)
+            self.BytesWrite.append(os.path.getsize(newDestinationDir + currFileName))
         
         return WriteCode
 #===============================================================================
