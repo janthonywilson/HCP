@@ -25,7 +25,7 @@ from urllib2 import URLError, HTTPError
 #===============================================================================
 class pyHCP(object):
     """Main HCP Interfacing Class"""
-    def __init__( self, User, Password, Server ):
+    def __init__( self, User, Password, Server='intradb.humanconnectome.org' ):
         super(pyHCP, self).__init__()
         self.User = User
         self.Password = Password
@@ -121,7 +121,7 @@ class getHCP(pyHCP):
                         self.Timeout += self.TimeoutStep
                         print 'URLError code: ' +str(e.reason)+ '. Timeout increased to ' +str(self.Timeout)+' seconds for JSESSION cookie...'
                     else:
-                        print 'URLError code: ' +str(e.reason)+ '. getSessionId Failed with wrong password.'
+                        print 'URLError message: ' +str(e.msg)+ '. getSessionId Failed with wrong password.'
                         sys.exit(401)
                 except:
                     print 'URL: %s failed with code: %s ' % (URL, e.code)
@@ -923,7 +923,7 @@ class writeHCP(getHCP):
                 newDestinationDir = self.DestinationDir
 
                 
-            if (FileName == None):
+            if (FileName == None) or (not FileName):
                 currFileName = os.path.basename(currURI)
             else:
                 currFileName = FileNameList[i]
@@ -1005,7 +1005,7 @@ class writeHCP(getHCP):
             else:
                 newDestinationDir = self.DestinationDir
             
-            if (FileName == None):
+            if (not FileName):
                 currFileName = os.path.basename(currFilePathName)
             else:
                 currFileName = FileNameList[i]

@@ -79,56 +79,31 @@ FunctSeries = args.FunctSeries
 Project = args.Project
 Shadow = args.Shadow
 Build = args.Build
-#===============================================================================
-# DEPRICATED...
-#===============================================================================
-# iHCPid = args.iHCPid
-# iLabel = args.iLabel
-# FuncScanId = args.FuncScanId
-# iScoutScanId = args.iScoutScanId
-# iUnwarpDir = args.iUnwarpDir
-# 
-# # structural...
-# iStructSeries = args.iStructSeries
-# iT1wScanId_1 = args.iT1wScanId_1
-# iT1wScanId_2 = args.iT1wScanId_2
-# iT2wScanId_1 = args.iT2wScanId_1
-# iT2wScanId_2 = args.iT2wScanId_2
-# iT1wSeriesDesc_1 = args.iT1wSeriesDesc_1
-# iT1wSeriesDesc_2 = args.iT1wSeriesDesc_2 
-# iT2wSeriesDesc_1 = args.iT2wSeriesDesc_1
-# iT2wSeriesDesc_2 = args.iT2wSeriesDesc_2
-# 
-# #diffusion...
-# iDiffSeries = args.iDiffSeries
-#===============================================================================
 
-
-#if (iPipeline.find('Funct') != -1):
-#    iStructFunctDiffSeries = iFunctSeries
-#elif (iPipeline.find('Struct') != -1):
-#    iStructFunctDiffSeries = iStructSeries
-#elif (iPipeline.find('Diff') != -1):
-#    iStructFunctDiffSeries = iDiffSeries
-#    
-#tmpStructFunctDiffSeries = iStructFunctDiffSeries
+if (Server.find('intra') != -1) or (Server.find('hcpi') != -1):
+    dbStr = 'intradb'
+    if (Pipeline == 'FunctionalHCP'): 
+        print 'Series Descriptions Changed: IntraDB FunctionalHCP broken...'
+        sys.exit()
+elif (Server.find('hcpx') != -1):
+    dbStr = 'hcpdb'
 
 #===============================================================================
 # STATIC PARMS...
 #===============================================================================
-#JobSubmitter = '/data/intradb/pipeline/bin/PipelineJobSubmitter '
-JobSubmitter = '/data/hcpdb/pipeline/bin/PipelineJobSubmitter '
-#PipelineLauncher = '/data/intradb/pipeline/bin/XnatPipelineLauncher '
-PipelineLauncher = '/data/hcpdb/pipeline/bin/XnatPipelineLauncher '
+JobSubmitter = '/data/%s/pipeline/bin/PipelineJobSubmitter ' % (dbStr)
+PipelineLauncher = '/data/%s/pipeline/bin/XnatPipelineLauncher ' % (dbStr)
 DataType = '-dataType xnat:mrSessionData '
 SupressNotify = '-supressNotification '
 NotifyUser = '-notify wilsont@mir.wustl.edu ' 
 NotifyAdmin = '-notify db-admin@humanconnectome.org '
 MailHost = '-parameter mailhost=mail.nrg.wustl.edu '
-UserFullName = '-parameter userfullname=T.Wilson ' 
-#XnatServer = '-parameter xnatserver=HCPIntradb '
-XnatServer = '-parameter xnatserver=ConnectomeDB '
-AdminEamil = '-parameter adminemail=db-admin@humanconnectome.org '
+UserFullName = '-parameter userfullname=T.Wilson '
+if (dbStr == 'intradb'): 
+    XnatServer = '-parameter xnatserver=HCPIntradb '
+else:
+    XnatServer = '-parameter xnatserver=ConnectomeDB '
+AdminEmail = '-parameter adminemail=db-admin@humanconnectome.org '
 UserEmail = '-parameter useremail=wilsont@mir.wustl.edu '
 #===============================================================================
 # HACK for REST RL/LR...
@@ -145,16 +120,16 @@ getHCP.Project = Project
 #===============================================================================
 # FUNCTIONS...
 #===============================================================================
-def fGetAllIndices(inputVal, inputList):
-    allIndicesList = list()
-    currIdx = -1
-    while True:
-        try:
-            currIdx = inputList.index(inputVal, currIdx + 1)
-            allIndicesList.append(currIdx)
-        except ValueError:
-            break
-    return numpy.asarray(allIndicesList, dtype=numpy.int)
+#def fGetAllIndices(inputVal, inputList):
+#    allIndicesList = list()
+#    currIdx = -1
+#    while True:
+#        try:
+#            currIdx = inputList.index(inputVal, currIdx + 1)
+#            allIndicesList.append(currIdx)
+#        except ValueError:
+#            break
+#    return numpy.asarray(allIndicesList, dtype=numpy.int)
 #===============================================================================
 
 SleepTime = 3
@@ -169,7 +144,6 @@ if (Build != None):
 else:
     BuildList = ('')
     
-#FunctionalList = iStructFunctDiffSeries.split(',')
 
 if (len(SubjectsList) > len(ShadowList)):
 #    ShadowArray = numpy.tile(ShadowList, (numpy.ceil(len(SubjectsList) / len(ShadowList))))
@@ -185,6 +159,7 @@ else:
 if (Pipeline == 'FunctionalHCP'): PipelineSubString = ['fnc', 'task', 'rest']
 elif (Pipeline == 'StructuralHCP'): PipelineSubString = ['strc']
 elif (Pipeline == 'DiffusionHCP'): PipelineSubString = ['diff']
+elif (Pipeline == 'FIX_HCP'): PipelineSubString = ['fnc', 'rest']
 else: PipelineSubString = None
     
 UsableList = ['good', 'excellent', 'usable', 'undetermined']
@@ -195,9 +170,17 @@ linIdx = 0
 for h in xrange(0, len(SubjectsList)): 
     getHCP.Subject = SubjectsList[h]
     SubjectSessions = getHCP.getSubjectSessions()
-    getHCP.Session = SubjectSessions.get('Sessions')[SubjectSessions.get('Types').index(PipelineSubString[0])]
-    sessionMeta = getHCP.getSessionMeta() 
     
+    # find correct session...
+    for i in xrange(0, len(SubjectSessions.get('Sessions'))):
+        getHCP.Session = SubjectSessions.get('Sessions')[i]
+        sessionMeta = getHCP.getSessionMeta()
+        if (FunctSeries != None) and (FunctSeries in sessionMeta.get('Series')):
+            break
+        else: 
+            getHCP.Session = SubjectSessions.get('Sessions')[SubjectSessions.get('Types').index(PipelineSubString[0])]
+            
+    sessionMeta = getHCP.getSessionMeta()
     seriesList = sessionMeta.get('Series')
     typeList = sessionMeta.get('Types')
     idList = sessionMeta.get('IDs')
@@ -208,7 +191,7 @@ for h in xrange(0, len(SubjectsList)):
         for i in xrange(0, len(sessionMeta.get('Types'))):
             if (sessionMeta.get('Types')[i] == 'tfMRI') or (sessionMeta.get('Types')[i] == 'rfMRI'):
                 FunctionalList.append(sessionMeta.get('Series')[i])
-    elif (Pipeline == 'FunctionalHCP'):
+    elif (Pipeline == 'FunctionalHCP') or (Pipeline == 'FIX_HCP'):
         FunctionalList = FunctSeries.split(',')
     else:
         FunctionalList = ['Other']
@@ -219,37 +202,18 @@ for h in xrange(0, len(SubjectsList)):
         print 'ERROR: No ' +Pipeline+ ' session could be found for subject ' +getHCP.Subject
         
     
-
-        
-    
     for i in xrange(0, len(FunctionalList)):
         linIdx += 1
         
 
             
-        if (Pipeline.find('Funct') != -1):
+        if (Pipeline.find('Funct') != -1) or (Pipeline.find('FIX') != -1):
             currSeries = FunctionalList[i]
-        
-#            if ( (tmpFunctSeries.find('REST') != -1) and (preChangeRLList.count(getHCP.Subject) > 0) ):
-#                if (tmpFunctSeries.find('REST3') != -1) or (tmpFunctSeries.find('REST1') != -1):
-#                    currFunctSeries = 'BOLD_'+ tmpFunctSeries +'_RL'
-#                elif (tmpFunctSeries.find('REST4') != -1) or (tmpFunctSeries.find('REST2') != -1):
-#                    currFunctSeries = 'BOLD_'+ tmpFunctSeries +'_LR'
-#            elif ( (tmpFunctSeries.find('REST') != -1) and (preChangeRLList.count(getHCP.Subject) == 0) ):
-#                if (tmpFunctSeries.find('REST3') != -1) or (tmpFunctSeries.find('REST2') != -1):
-#                    currFunctSeries = 'BOLD_'+ tmpFunctSeries +'_LR'
-#                elif (tmpFunctSeries.find('REST4') != -1) or (tmpFunctSeries.find('REST1') != -1):
-#                    currFunctSeries = 'BOLD_'+ tmpFunctSeries +'_RL'
-
-            # Check that the functional scan is usable, return the session with usable scan...
-            # code for intradb to loop across sessions...
-#            for j in xrange(0, len(SubjectSessions.get('Sessions'))):
-#                getHCP.Session = SubjectSessions.get('Sessions')[j]
             
             if (currSeries in sessionMeta.get('Series')):
                 currUsability = sessionMeta.get('Quality')[sessionMeta.get('Series').index(currSeries)]
-                
-            SessionId = getHCP.Session
+            else:
+                print 'Current usability could not be determined for subject %s, session %s...' % (getHCP.Subject, getHCP.Session)
 
         elif (Pipeline.find('Diff') != -1):
             diffSessionIdx = 0
@@ -271,13 +235,16 @@ for h in xrange(0, len(SubjectsList)):
         
         
         if (BuildArray.size >= len(SubjectsList)):
-            BuildDirRoot = '/data/hcpdb/build' + str(BuildArray[h]) + '/' + Project + '/'
+            BuildDirRoot = '/data/%s/build%s/%s/' % (dbStr, str(BuildArray[h]), Project)
         else:
-            BuildDirRoot = '/data/hcpdb/build/' + Project + '/'
+            BuildDirRoot = '/data/%s/build/%s/' % (dbStr, Project)
 #            print iBuildDirRoot
         
         launcherProject = '-parameter project=%s ' % Project 
-        launcherPipeline = '-pipeline /data/hcpdb/pipeline/catalog/%s/%s.xml ' % (Pipeline, Pipeline)
+        if (Pipeline == 'FIX_HCP'):
+            launcherPipeline = '-pipeline /data/%s/pipeline/catalog/FIX/%s.xml ' % (dbStr, Pipeline)
+        else:
+            launcherPipeline = '-pipeline /data/%s/pipeline/catalog/%s/%s.xml ' % (dbStr, Pipeline, Pipeline)
         launcherUser = '-u %s ' % User 
         launcherPassword = '-pwd %s ' % Password 
         launcherLabel = '-label %s ' % getHCP.Session
@@ -291,7 +258,7 @@ for h in xrange(0, len(SubjectsList)):
             currBuildDir = BuildDirRoot + str(numpy.asarray(round(time.time()), dtype=numpy.uint64))
         else:
             currBuildDir = BuildDirRoot + str(numpy.asarray(round(sTime), dtype=numpy.uint64))
-        BuildDir = '-parameter builddir=' + currBuildDir + ' '
+        BuildDir = '-parameter builddir=%s ' % (currBuildDir)
 
         
         if not os.path.exists(currBuildDir + os.sep + getHCP.Subject) and sys.platform != 'win32':
@@ -300,9 +267,9 @@ for h in xrange(0, len(SubjectsList)):
         RedirectionStr = ' > ' + currBuildDir.replace(' ', '') + os.sep + getHCP.Subject + os.sep + Pipeline + 'LaunchSTDOUT.txt'
         
         if (socket.gethostname() == 'intradb.humanconnectome.org') and (Shadow != None):
-                Host = '-host https://intradb-shadow' + ShadowArray[h] + '.nrg.mir '
+            Host = '-host https://intradb-shadow' + ShadowArray[h] + '.nrg.mir '
         else: 
-            Host = '-host https://' + socket.gethostname() + ' '
+            Host = '-host https://%s ' % (socket.gethostname())
 
                 
             
@@ -318,8 +285,10 @@ for h in xrange(0, len(SubjectsList)):
             PhaseEncodingDir = '-parameter PhaseEncodingDir=1 '
             
             # if intradb...
-#            DiffusionFunctionalList = ['DWI_RL_dir95','DWI_RL_dir96','DWI_RL_dir97','DWI_LR_dir95','DWI_LR_dir96','DWI_LR_dir97']
-            DiffusionSeriesList = ['DWI_dir95_RL','DWI_dir96_RL','DWI_dir97_RL','DWI_dir95_LR','DWI_dir96_LR','DWI_dir97_LR']
+            if (dbStr == 'intradb'):
+                DiffusionSeriesList = ['DWI_RL_dir95','DWI_RL_dir96','DWI_RL_dir97','DWI_LR_dir95','DWI_LR_dir96','DWI_LR_dir97']
+            elif (dbStr == 'hcpdb'):
+                DiffusionSeriesList = ['DWI_dir95_RL','DWI_dir96_RL','DWI_dir97_RL','DWI_dir95_LR','DWI_dir96_LR','DWI_dir97_LR']
             
             DiffusionScanIdList = ['RL_1ScanId', 'RL_2ScanId', 'RL_3ScanId', 'LR_1ScanId', 'LR_2ScanId', 'LR_3ScanId']
             DiffusionScanIdDict = {'RL_1ScanId' : None, 'RL_2ScanId' : None, 'RL_3ScanId' : None, 'LR_1ScanId' : None, 'LR_2ScanId' : None, 'LR_3ScanId' : None}
@@ -358,7 +327,7 @@ for h in xrange(0, len(SubjectsList)):
             launcherRL_Dir2 = '-parameter RL_Dir2=%s ' % DiffusionDirDict['RL_Dir2']
             launcherRL_Dir3 = '-parameter RL_Dir3=%s ' % DiffusionDirDict['RL_Dir3']
             
-            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEamil + UserEmail + MailHost + UserFullName +\
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherSession + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             EchoSpacing + PhaseEncodingDir + launcherSubject + BuildDir + launcherLR_Dir1 + launcherLR_Dir2 + launcherLR_Dir3 + launcherRL_Dir1 + launcherRL_Dir2 + launcherRL_Dir3 + \
             DiffusionScanIdDict['RL_1ScanId'] + DiffusionScanIdDict['RL_2ScanId'] + DiffusionScanIdDict['RL_3ScanId'] + DiffusionScanIdDict['LR_1ScanId'] + DiffusionScanIdDict['LR_2ScanId'] + DiffusionScanIdDict['LR_3ScanId'] + RedirectionStr
             
@@ -380,46 +349,50 @@ for h in xrange(0, len(SubjectsList)):
             iT2wSeriesDesc_2 = 'T2w_SPC2'
             
 
-            StructuralSeriesDescDict = {'T1w_MPR1' : 'T1w_MPR1', 'T1w_MPR1' : 'T1w_MPR1', 'T2w_SPC1' : 'T2w_SPC1', 'T2w_SPC2' : 'T2w_SPC2'}
+            StructuralSeriesDescDict = {'T1w_MPR1' : 'T1w_MPR1', 'T1w_MPR2' : 'T1w_MPR2', 'T2w_SPC1' : 'T2w_SPC1', 'T2w_SPC2' : 'T2w_SPC2'}
             StructuralSeriesDescScanIdDict = {'T1w_MPR1' : None, 'T1w_MPR2' : None, 'T2w_SPC1' : None, 'T2w_SPC2' : None}
             StructuralSeriesQualityDict = {'T1w_MPR1' : None, 'T1w_MPR2' : None, 'T2w_SPC1' : None, 'T2w_SPC2' : None}
             StructuralSeriesList = ['T1w_MPR1', 'T1w_MPR2', 'T2w_SPC1', 'T2w_SPC2']
             
 
-            
+            # grab the fieldmap ids...
+            fieldmapMagIdx = seriesList.index('FieldMap_Magnitude')
+            filedmapPhaIdx = seriesList.index('FieldMap_Phase')
+            if (typeList[fieldmapMagIdx] == 'FieldMap') and (qualityList[fieldmapMagIdx] in UsableList): 
+                MagScanId = idList[fieldmapMagIdx]
+                
+            if (typeList[filedmapPhaIdx] == 'FieldMap') and (qualityList[filedmapPhaIdx] in UsableList):
+                PhaScanId = idList[filedmapPhaIdx]
+                    
+            # collect quality, series descriptions, and scan ids...
             for j in xrange(0, len(seriesList)):
                 currSeriesDesc = seriesList[j]
                 currTypeList = typeList[j]
                 currQuality = qualityList[j]
-                if (currSeriesDesc in StructuralSeriesList): 
-                    
+                if (currSeriesDesc in StructuralSeriesList) and (qualityList[j] in UsableList): 
                     StructuralSeriesDescScanIdDict[currSeriesDesc] = idList[j]
                     StructuralSeriesQualityDict[currSeriesDesc] = qualityList[j]
                     
-                # grab the fieldmap ids
-                if (currSeriesDesc.find('FieldMap_Magnitude') != -1) and (currTypeList.find('FieldMap') != -1) and (currQuality in UsableList): 
-                    MagScanId = idList[j]
-                if (currSeriesDesc.find('FieldMap_Phase') != -1) and (currTypeList.find('FieldMap') != -1) and (currQuality in UsableList): 
-                    PhaScanId = idList[j]
+
                 
-        
+            # this should check for absence and quality of scans and swap if bad or absent...
             for j in xrange(0, len(StructuralSeriesList)):
                 currSeries = StructuralSeriesList[j]
                 if (StructuralSeriesDescScanIdDict.get(currSeries) == None):
                     if (currSeries == 'T1w_MPR1'):
-                        if (StructuralSeriesDescScanIdDict.get('T1w_MPR2') != None):
+                        if (StructuralSeriesDescScanIdDict.get('T1w_MPR2') != None): # or (StructuralSeriesQualityDict.get('T1w_MPR2') not in UsableList):
                             StructuralSeriesDescScanIdDict['T1w_MPR1'] = StructuralSeriesDescScanIdDict.get('T1w_MPR2')
                             StructuralSeriesDescDict['T1w_MPR1'] = 'T1w_MPR2'
                     elif (currSeries == 'T1w_MPR2'):
-                        if (StructuralSeriesDescScanIdDict.get('T1w_MPR1') != None):
+                        if (StructuralSeriesDescScanIdDict.get('T1w_MPR1') != None): # or (StructuralSeriesQualityDict.get('T1w_MPR1') not in UsableList):
                             StructuralSeriesDescScanIdDict['T1w_MPR2'] = StructuralSeriesDescScanIdDict.get('T1w_MPR1')
                             StructuralSeriesDescDict['T1w_MPR2'] = 'T1w_MPR1'
                     elif (currSeries == 'T2w_SPC1'):
-                        if (StructuralSeriesDescScanIdDict.get('T2w_SPC2') != None):
+                        if (StructuralSeriesDescScanIdDict.get('T2w_SPC2') != None): # or (StructuralSeriesQualityDict.get('T2w_SPC2') not in UsableList):
                             StructuralSeriesDescScanIdDict['T2w_SPC1'] = StructuralSeriesDescScanIdDict.get('T2w_SPC2')
                             StructuralSeriesDescDict['T2w_SPC1'] = 'T2w_SPC2'
                     elif (currSeries == 'T2w_SPC2'):
-                        if (StructuralSeriesDescScanIdDict.get('T2w_SPC1') != None):
+                        if (StructuralSeriesDescScanIdDict.get('T2w_SPC1') != None): # or (StructuralSeriesQualityDict.get('T2w_SPC1') not in UsableList):
                             StructuralSeriesDescScanIdDict['T2w_SPC2'] = StructuralSeriesDescScanIdDict.get('T2w_SPC1')
                             StructuralSeriesDescDict['T2w_SPC2'] = 'T2w_SPC1'
                             
@@ -460,7 +433,7 @@ for h in xrange(0, len(SubjectsList)):
             # for PostFS...
             launcherFinalTemplateSpace = '-parameter FinalTemplateSpace=MNI152_T1_0.7mm.nii.gz'
             
-            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEamil + UserEmail + MailHost + UserFullName +\
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             BuildDir + launcherSession + launcherSubject + launcherMagScanId + launcherPhaScanId + launcherT1wScanId_1 + launcherT1wScanId_2 + \
             launcherT2wScanId_1 + launcherT2wScanId_2 + launcherT1wSeriesDesc_1 + launcherT1wSeriesDesc_2 + launcherT2wSeriesDesc_1 + launcherT2wSeriesDesc_2 + launcherTE + launcherT1wSampleSpacing + launcherT2wSampleSpacing + launcherT1wTemplate + \
             launcherT1wTemplateBrain + launcherT2wTemplate + launcherT2wTemplateBrain + launcherTemplateMask + launcherFinalTemplateSpace + RedirectionStr
@@ -483,15 +456,6 @@ for h in xrange(0, len(SubjectsList)):
                 FuncScanParms = getHCP.getScanParms()
             else:
                 print 'OOPS, FunctionalHCP mismatch with FunctionalList and FunctSeries'
-#                funcIndicesArray = fGetAllIndices(FunctSeries, FunctionalList)
-#                FuncQualityList = list()
-#                for j in xrange(0, len(funcIndicesArray)):
-#                    currQuality = qualityList[funcIndicesArray[j]]
-#                    if (currQuality == 'undetermined') or (currQuality == 'usable'):
-#                        FuncScanId = funcIndicesArray[j] + 1
-#                        FuncQuality = currQuality
-#                    else:
-#                        print 'WARNING: Functional scan ' +str(funcIndicesArray[j]+1)+ ' is neither undetermined or usable...'
                 
             if (seriesList.count(currSeries + '_SBRef') == 1):
                 ScoutScanId = idList[seriesList.index(currSeries + '_SBRef')]
@@ -500,22 +464,12 @@ for h in xrange(0, len(SubjectsList)):
                 ScoutScanParms = getHCP.getScanParms()
             else:
                 print 'OOPS, FunctionalHCP mismatch with FunctionalList SBRef and FunctSeries'
-#                scoutIndicesArray = fGetAllIndices(FunctSeries + '_SBRef', SeriesList)
-#                for j in xrange(0, len(scoutIndicesArray)):
-#                    seriesEnumerate = enumerate(SeriesList)
-#                    currQuality = qualityList[scoutIndicesArray[j]]
-#                    if (currQuality == 'undetermined') or (currQuality == 'usable'):
-#                        iScoutScanId = scoutIndicesArray[j] + 1
-#                        iScoutQuality = currQuality
-#                    else:
-#                        print 'WARNING: Functional Scout scan ' +str(scoutIndicesArray[j]+1)+ ' is neither undetermined or usable...'
             
             getHCP.Scan = FuncScanId
             scanMeta = getHCP.getScanMeta()
-#            funcScanAcqTime = fGetAcquisitionTime(iUser, iPassword, iProject, iSubject, iSessionId, str(FuncScanId))
             
             #===================================================================
-            # Here be dragons...
+            # Here be dragons...series descriptions changed for CDB, broke IntraDB
             #===================================================================
             magScanCount = seriesList.count('SpinEchoFieldMap_LR')
             
@@ -579,7 +533,7 @@ for h in xrange(0, len(SubjectsList)):
             # NOTE: also important for functionalHCP is distortion correction is TOPUP, so fieldmap distortion correction is not even used.  TE could be anything and it would not matter.
             #-------------------------------------------
             
-            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEamil + UserEmail + MailHost + UserFullName +\
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             BuildDir + launcherSession + launcherSubject + launcherMagScanId + launcherPhaScanId + launcherFuncScanId + launcherScoutScanId + \
             launcherFunctSeries + launcherLR_Fieldmap + launcherRL_Fieldmap + launcherDwellTime + TE + launcherUnwarpDir + launcherDistortionCorrect + RedirectionStr
             
@@ -588,7 +542,35 @@ for h in xrange(0, len(SubjectsList)):
             else:
                 print SubmitStr
                 os.system(SubmitStr)
+                
+        #===============================================================================
+        # FIX HCP....
+        #===============================================================================
+        elif (Pipeline == 'FIX_HCP'):
+
+            launcherBP = '-parameter BP=%s ' % (str(2000))
+            launcherFunctSeries = '-parameter functseries=%s ' % (currSeries)
             
+            #===================================================================
+            # -label 100307_fnca 
+            # -host https://hcpi-dev-cuda00.nrg.mir
+            # -parameter xnatserver=ConnectomeDB 
+            # -parameter xnat_id=HCPIntradb_E04466
+            # -parameter project=HCP_Phase2
+            # -parameter sessionid=100307_fnca 
+            # -parameter subjects=100307 
+            # -parameter BP=2000 
+            # -parameter functionalseries=BOLD_REST1_RL
+            # -parameter builddir=/data/hcpdb/build/HCP_Phase2/1362341272 
+            #===================================================================
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +\
+            SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName + launcherSubject + launcherSession + BuildDir + launcherBP + launcherFunctSeries + RedirectionStr
+            
+            if sys.platform == 'win32':
+                print SubmitStr
+            else:
+                print SubmitStr
+                os.system(SubmitStr)
 
         
             

@@ -7,8 +7,10 @@ import socket
 import argparse
 import nipy as nip
 import nibabel as nib
+import multiprocessing as mp
 from scipy import stats
 import matplotlib.pyplot as pyplot
+from multiprocessing.sharedctypes import Value, Array
 
 #===============================================================================
 # -D R:\nifti\QC_Tests  -N  CP10086_v3_T2w2_0_7mm.nii.gz -O C:\tmp\bar
@@ -145,18 +147,56 @@ if (fracElimSlicesUse == 'y'):
     boolElimSlices[nElimSlices:(numpyNipyDataSz[2] - nElimSlices)] = 1
 else:
     boolElimSlices[0:numpyNipyDataSz[2]] = 1
+    
 ElimSlicesIdx = numpy.nonzero(boolElimSlices)
 print "Eliminating " +str( round(numpyNipyDataSz[2] - sum(boolElimSlices)) )+ " of " +str(numpyNipyDataSz[2])+ " slices ..."
 
 
+#===============================================================================
+# from multiprocessing import Pool
+# import time
+# import numpy
+# 
+# def takeuptime(ntrials):
+#    for ii in xrange(ntrials):
+#        junk = numpy.std(numpy.random.randn(1e5))
+#    return junk
+# 
+# if __name__ == "__main__":
+#    start = time.time()
+#    map(takeuptime, [500, 500])
+#    print "Serial time: %f" % (time.time() - start)
+# 
+#    start = time.time()
+#    pool = Pool(processes=2)
+#    pool.map(takeuptime, [500, 500])
+#    print "Parallel time: %f" % (time.time() - start)
+#===============================================================================
+    
+#freqCutoffLow = Value('i', freqCutoffLow)
+#freqCutoffHigh = Value('i', freqCutoffHigh)
+#plotSlope = Value('i', 0)
+
+#http://www.ster.kuleuven.be/~pieterd/python/html/core/f2py.html#multiprocessing
+
+print mp.cpu_count()
+
 if len(numpyNipyDataSz) == 3:
     currVol = numpyNipyData    
     regressCoeffsResults = numpy.zeros([numpyNipyDataSz[2], 7])
-    for i in xrange(0, numpyNipyDataSz[2]):
+    jobs = []
+#    for i in xrange(0, numpyNipyDataSz[2]):
+    for i in xrange(0, 4):
         currSlice = currVol[:,:,i]
+        
+        currSlice = Array('i', currVol[:,:,i]) 
 
-        regressCoeffs = fFourierRegressCoeffs( currSlice, freqCutoffLow, freqCutoffHigh, plotSlope )
-        regressCoeffsResults[i,:] = numpy.concatenate([ [1, (i+1)], regressCoeffs ])
+        p = mp.Process(target=fFourierRegressCoeffs, args=(currSlice, freqCutoffLow, freqCutoffHigh, plotSlope))
+        jobs.append(p)
+        p.start()
+
+#        regressCoeffs = fFourierRegressCoeffs( currSlice, freqCutoffLow, freqCutoffHigh, plotSlope )
+#        regressCoeffsResults[i,:] = numpy.concatenate([ [1, (i+1)], regressCoeffs ])
         
     if plotResults:
         pyplot.hist(regressCoeffsResults[:,2], bins=100)
@@ -166,23 +206,25 @@ if len(numpyNipyDataSz) == 3:
 #        pyplot.imshow(regressCoeffsResults, interpolation='none')
         pyplot.show()
 
-elif len(numpyNipyDataSz) == 4:
-    linIdx = 0
-    regressCoeffsResults = numpy.zeros([numpyNipyDataSz[2] * numpyNipyDataSz[3], 7])
-    volumeMeansStd = numpy.zeros([numpyNipyDataSz[3], 3])
-    for h in xrange(0, numpyNipyDataSz[3]):
-        currVol = numpyNipyData[:,:,:,h]
-        sliceSlopes = numpy.zeros(numpyNipyDataSz[2])
-        for i in xrange(0, numpyNipyDataSz[2]):
-            currSlice = currVol[:,:,i]
-            
-            regressCoeffs = fFourierRegressCoeffs( currSlice, freqCutoffLow, freqCutoffHigh, plotSlope )
-            sliceSlopes[i] = regressCoeffs[0]
-            regressCoeffsResults[linIdx,:] = numpy.concatenate([ [(h+1), (i+1)], regressCoeffs ])
-            linIdx += 1
-        volumeMeansStd[h,0] = h+1
-        volumeMeansStd[h,1] = numpy.average(sliceSlopes) 
-        volumeMeansStd[h,2] = numpy.std(sliceSlopes)
+#===============================================================================
+# elif len(numpyNipyDataSz) == 4:
+#    linIdx = 0
+#    regressCoeffsResults = numpy.zeros([numpyNipyDataSz[2] * numpyNipyDataSz[3], 7])
+#    volumeMeansStd = numpy.zeros([numpyNipyDataSz[3], 3])
+#    for h in xrange(0, numpyNipyDataSz[3]):
+#        currVol = numpyNipyData[:,:,:,h]
+#        sliceSlopes = numpy.zeros(numpyNipyDataSz[2])
+#        for i in xrange(0, numpyNipyDataSz[2]):
+#            currSlice = currVol[:,:,i]
+#            
+#            regressCoeffs = fFourierRegressCoeffs( currSlice, freqCutoffLow, freqCutoffHigh, plotSlope )
+#            sliceSlopes[i] = regressCoeffs[0]
+#            regressCoeffsResults[linIdx,:] = numpy.concatenate([ [(h+1), (i+1)], regressCoeffs ])
+#            linIdx += 1
+#        volumeMeansStd[h,0] = h+1
+#        volumeMeansStd[h,1] = numpy.average(sliceSlopes) 
+#        volumeMeansStd[h,2] = numpy.std(sliceSlopes)
+#===============================================================================
         
 if printData:
     niftiFileName = fStripExtension( inputFileName )

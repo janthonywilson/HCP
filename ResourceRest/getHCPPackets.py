@@ -252,7 +252,7 @@ elif (Package == 'FIX'):
     
     SourceDir = '%s/%s' % (ResourceRoot, FunctSeries)
     FIXList = list()
-    FIXList.append('%s/%s_hp2000_clean.nii.g' % (SourceDir, FunctSeries))
+    FIXList.append('%s/%s_hp2000_clean.nii.gz' % (SourceDir, FunctSeries))
     FIXList.append('%s/%s_Atlas_hp2000_clean.dtseries.nii' % (SourceDir, FunctSeries))
     
     SourceDir = '%s/%s/%s_hp2000.ica' % (ResourceRoot, FunctSeries, FunctSeries)

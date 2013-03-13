@@ -15,7 +15,10 @@ import time
 from pyHCP import pyHCP, getHCP, writeHCP
 
 sTime = time.time()
-
+#===============================================================================
+# TO DO:
+#===============================================================================
+# -Scan should accept a list...
 #===============================================================================
 # PARSE INPUT
 #===============================================================================
@@ -27,6 +30,7 @@ sTime = time.time()
 # -User tony -Password passfoo -Server hcpx-dev-cuda00.nrg.mir -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource tfMRI_WM_RL_unproc -ResourceRoot LINKED_DATA -FileType NIFTI,TXT -OutputDir C:\tmp\HCP -Strip None
 # -User tony -Password passfoo -Server hcpx-demo.humanconnectome.org -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource tfMRI_WM_RL_unproc -ResourceRoot tfMRI_WM_RL_unproc -OutputDir C:\tmp\HCP -Strip None
 # -Server https://hcpx-dev-cuda00.nrg.mir/ -User tony -Password passfoo -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Scan 109 -FileType NIFTI -OutputFile 100307_T1w_MPR1.nii.gz -OutputDir C:\tmp
+# DIFFUSION: -Files T1w_acpc_dc.nii.gz,T1w_acpc_dc_restore.nii.gz,T1w_acpc_dc_restore_brain.nii.gz,BiasField_acpc_dc.nii.gz,brainmask_fs.nii.gz,
 #===============================================================================
 parser = argparse.ArgumentParser(description="Program to get files from resources for HCP pipelines...")
 # input...
@@ -37,7 +41,7 @@ parser.add_argument("-Subject", "--Subject", dest="Subject", type=str, default=N
 parser.add_argument("-Session", "--Session", dest="Session", type=str, default=None, help="pick session")
 parser.add_argument("-Scan", "--Scan", dest="Scan", type=str, default=None, help="pick scan")
 parser.add_argument("-Resource", "--Resource", dest="Resource", type=str, default=None, help="pick resource")
-parser.add_argument("-ResourceRoot", "--ResourceRoot", dest="ResourceRoot", type=str, default=None, help="pick resource root")
+parser.add_argument("-ResourcePath", "--ResourcePath", dest="ResourcePath", type=str, default=None, help="pick resource path off of resource(root)")
 parser.add_argument("-Files", "--Files", dest="Files", type=str, default=None, help="pick resource file(s)")
 parser.add_argument("-Flatten", "--Flatten", dest="Flatten", default=True, help="bool to flatten write")
 parser.add_argument("-FileType", "--FileType", dest="FileType", type=str, default=None, help="pick filetype for copy")
@@ -66,7 +70,7 @@ FileType = args.FileType
 Flatten = args.Flatten
 Server = args.Server
 Resource = args.Resource
-ResourceRoot = args.ResourceRoot
+ResourcePath = args.ResourcePath
 StripSession = args.StripSession
 if (StripSession == 'None'): StripSession = None
 
@@ -93,8 +97,8 @@ if (FileType is not None) and (FileType.find(',') != -1):
 if (Files is not None) and (Files.find(',') != -1):
     Files = Files.split(',')
     
-if (ResourceRoot is None):
-    ResourceRoot = Resource
+if (ResourcePath is None):
+    ResourcePath = Resource
     
 if (Flatten == 'False'):
     Flatten = False
@@ -128,49 +132,59 @@ OutputFilePathName = list()
 
 if (Resource is not None):
     
-    SubjectResourcesMeta = getHCP.getSubjectResourcesMeta()
-    getHCP.Session = SubjectResourcesMeta.get('Session')[SubjectResourcesMeta.get('Label').index(ResourceRoot)]
-    
-    if (Resource in SubjectResourcesMeta.get('Label')):
+    #===========================================================================
+    # check for session on input, if not present do the full Resources call, this is a resource hog...
+    #===========================================================================
+    if (getHCP.Session == None):
+        SubjectResourcesMeta = getHCP.getSubjectResourcesMeta()
+        getHCP.Session = SubjectResourcesMeta.get('Session')[SubjectResourcesMeta.get('Label').index(Resource)]
+        if (Resource in SubjectResourcesMeta.get('Label')):
+            getHCP.Resource = Resource
+            ResourceMeta = getHCP.getSubjectResourceMeta()
+        else:
+            print 'ERROR: %s not in %s resources.' % (Resource, Subject)
+            sys.exit()
+                
+    else:
         getHCP.Resource = Resource
-        ResourceMeta = getHCP.getResourceMeta()
+        ResourceMeta = getHCP.getSubjectResourceMeta()
+    
+    for i in xrange(0, len(ResourceMeta.get('Path'))):
         
-        for i in xrange(0, len(ResourceMeta.get('Path'))):
-            
-            #=======================================================================
-            # if entire RESOURCE is requested...
-            #=======================================================================
-            if (Files == None):
+        #=======================================================================
+        # if entire RESOURCE is requested...
+        #=======================================================================
+        if (Files == None):
+            if (ResourceMeta.get('Path')[i].find(Resource +'/'+ ResourcePath +'/') > 0) and (ResourcePath[-1] == '/*'):
                 ResourceMetaList = ResourceMeta.get('Path')[i].split('/')
     
-                
-                if (ResourceRoot in ResourceMetaList):
+                    #===========================================================
+                    # <!--For diffusion...-->
+                    # <!--T1w/*, T1w/xfms/*, T1w/<subject>/surf/*, T1w/<subject>/label/*, T1w/<subject>/mri/*, T1w/<subject>/mri/transforms/*, T1w/<subject>/stats/*, T1w/<subject>/touch/*-->
+                    # <!--MNINonLinear/*, MNINonLinear/xfms/*-->
+                    #===========================================================
+                if (Resource in ResourceMetaList):
                     FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
-                    ResourceRestIdx = ResourceMetaList.index(ResourceRoot)
-    #                print '/'.join(ResourceMetaList[0:ResourceRestIdx]), '/'.join(ResourceMetaList[ResourceRestIdx:])
-                    if (ResourceMeta.get('Readable')[i]):
-                        FilePathName.append(ResourceMeta.get('Path')[i])
-                    else:
-                        FilePathName.append(ResourceMeta.get('URI')[i])
+#                    ResourceRestIdx = ResourceMetaList.index(ResourcePath)
+                    FilePathName.append(ResourceMeta.get('Path')[i])
+                    FileURIName.append(ResourceMeta.get('URI')[i])
                 else:
-                    print 'ERROR: %s is not in %s.' % (ResourceRoot, ResourceMeta.get('Path')[i])
-                    sys.exit()
-            #=======================================================================
-            # else grab just some files from RESOURCE...
-            #=======================================================================
-            else:
-                for j in xrange(0, len(Files)):
-                    if (ResourceMeta.get('Path')[i].find(Files[j]) != -1) and (ResourceMeta.get('Path')[i] not in FilePathName):
-                        FileName.append(ResourceMeta.get('Name')[i])
-                        FilePathName.append(ResourceMeta.get('Path')[i])
-                        FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
-                        
-                        FileURIName.append(ResourceMeta.get('URI')[i])
+                    print 'ERROR: %s is not in %s.' % (ResourcePath, ResourceMeta.get('Path')[i])
+    #                sys.exit()
+        #=======================================================================
+        # else grab just some files from RESOURCE...
+        #=======================================================================
+        else:
+            for j in xrange(0, len(Files)):
+                if (ResourceMeta.get('Path')[i].find(Files[j]) != -1) and (ResourceMeta.get('Path')[i] not in FilePathName):
+                    FileName.append(ResourceMeta.get('Name')[i])
+                    FilePathName.append(ResourceMeta.get('Path')[i])
+                    FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
                     
+                    FileURIName.append(ResourceMeta.get('URI')[i])
+                
 #        CollectionsIdx = [i for i, x in enumerate(ResourceMeta.get('Format')) if x == FileType]
-    else:
-        print 'ERROR: %s not in %s resources.' % (Resource, Subject)
-        sys.exit()
+
     
 else:
     ScanMeta = getHCP.getScanMeta()
@@ -193,31 +207,13 @@ else:
     FilePathName.append(currPath)
     FileURIName.append(currURI)
     
-    #for i in xrange(0, len(ResourcePaths)): print 'Path: %s  \nURI: %s ' % (ResourcePaths[i], ResourceURIs[i])
-    
-    
-#    if (StripSession is not None):
-#        FileNameSplit = FileName.split('_')
-#        SessionIdx = FileNameSplit.index(StripSession)
-#        FileNameSans = FileNameSplit[0]
-#        for i in xrange(1, len(FileNameSplit)):
-#            if (i != SessionIdx):
-#                FileNameSans = FileNameSans + '_' + FileNameSplit[i]
-#        FileName = FileNameSans
-        
-#    print FilePathName, FileName, FilePath
-    
-#    if (OutputFile is not None):
-#        OutputDirFile = OutputDir + OutputFile
-#    else:
-#        OutputDirFile = OutputDir + FileName
                 
 if all(FilePathNameReadable):
     print ('cp %s %s' % (FilePathName, OutputFileName))
     writeHCP.writeFileFromPath(FilePathName, OutputFileName)
 else:
-    print ('Destination: %s  URI: %s' % (OutputDir, OutputFileName))
-    writeHCP.writeFileFromURL(getHCP, FileURIName, OutputFileName)
+    print ('Destination: %s  URI: %s' % (OutputDir, FileName))
+    writeHCP.writeFileFromURL(getHCP, FileURIName, FileName)
     print 'Streamed bytes: ' + ', '.join(map(str, writeHCP.BytesStream))
     
 print 'Written bytes: ' + ', '.join(map(str, writeHCP.BytesWrite))
