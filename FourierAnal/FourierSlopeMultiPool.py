@@ -1,8 +1,3 @@
-'''
-Created on 2013-03-22
-
-@author: jwilso01
-'''
 import os
 import csv
 import time
@@ -18,7 +13,9 @@ import matplotlib.pyplot as pyplot
 
 import multiprocessing as mp
 from multiprocessing import Pool, Process, Queue
-from multiprocessing.sharedctypes import Value, Array
+
+
+#from multiprocessing.sharedctypes import Value, Array
 #import pydevd;pydevd.settrace()
 
 #===============================================================================
@@ -50,10 +47,20 @@ freqCutoffHigh = 60;
 plotSlope = False
 plotResults = False
 printData = True
+Volume = numpy.empty([208, 300, 320])
+xGrid = numpy.empty([208, 300])
+yGrid = numpy.empty([208, 300])
 
+shared_array_base = mp.Array(ctypes.c_double, 320)
+coeffsArray = numpy.ctypeslib.as_array(shared_array_base.get_obj())
+#shared_array = shared_array.reshape(10, 10)
 
+#print coeffsArray.base, shared_array_base.get_obj()
+# No copy was made
+assert coeffsArray.base is shared_array_base.get_obj()
 
-
+#coeffsArray = numpy.empty([320])
+#coeffsArray = Array('f', 320, lock=False)
 
 inputFileName = niftiFile
 niftiFile = niftiDir +os.sep+ niftiFile
@@ -68,27 +75,26 @@ ndMesh =  numpy.asarray(numpy.mgrid[0:numpyNipyDataSz[0],0:numpyNipyDataSz[1]])
 xGrid = (ndMesh[0,:] - CenterPoint[0])**2
 yGrid = (ndMesh[1,:] - CenterPoint[1])**2 
 
+print mp.cpu_count()
 
-#Volume = numpy.empty(numpyNipyData.shape)
-#xGrid = numpy.empty([numpyNipyData.shape[0], numpyNipyData.shape[1]])
-#yGrid = numpy.empty([numpyNipyData.shape[0], numpyNipyData.shape[1]])
-
-coeffsArray = Array('f', numpyNipyData.shape[2], lock=False)
-SliceIdxs = Array('i', range(numpyNipyData.shape[2]), lock=False)
-
+#volArray = Array('i', numpyNipyData)
 Volume = numpyNipyData
 
 #===============================================================================
 # FUNCTIONS
 #===============================================================================
-def fFourierRegressCoeffs( SliceIdxs, coeffsArray ):
+def fFourierRegressCoeffs( SliceIdxs, testArray=coeffsArray ):
     global Volume, xGrid, yGrid
-    for i in xrange(0, len(SliceIdxs)):
-        Slice = Volume[:,:,SliceIdxs[i]]
-#        print i, SliceIdxs[i], numpy.sum(Slice.ravel())
+    for i in xrange(0, SliceIdxs):
+        Slice = Volume[:,:,i]
+#        print i, numpy.sum(Slice.ravel())
         fftImg = numpy.fft.fft2(Slice)
     #    fftImgVec = numpy.abs(numpy.real(fftImg.ravel()))
-
+    
+#        regressCoeffs = numpy.sum(numpy.abs(numpy.real(fftImg.ravel())))
+#        print regressCoeffs
+        
+#        testArray[i] = numpy.abs(numpy.random.normal())
         SliceSz = Slice.shape
         xySum = (xGrid + yGrid)
         radFreqs = numpy.sqrt( xySum )
@@ -107,21 +113,73 @@ def fFourierRegressCoeffs( SliceIdxs, coeffsArray ):
         #slope, intercept, r-value, p-value, stderr
         regressCoeffs = stats.linregress( plotFreqs, plotPows )
                 
-        coeffsArray[SliceIdxs[i]] = regressCoeffs[0]
+        testArray[i] = regressCoeffs[0]
 #        print regressCoeffs
-    return coeffsArray
+    return testArray
+#===============================================================================
+def fPrintData( inputMat, inputSubject, outputDir ):
+    
+    StatsListLen = len(inputMat) 
+    headerStr = ['Volume', 'Slice', 'Slope', 'Intercept', 'r-value', 'p-value', 'stderr']
+    fileName = inputSubject + '_FourierSlopeStatistics_' +str(len(numpyNipyDataSz))+ '.txt'
+
+    if not os.path.exists(outputDir):
+        os.makedirs(outputDir)
+    fileStatsId = csv.writer(open(outputDir +os.sep+ fileName, 'wb'), delimiter='\t')
+    fileStatsId.writerow(headerStr)
+    
+    for i in xrange(0, StatsListLen):
+            fileStatsId.writerow(inputMat[i,:])
+#===============================================================================
+def fPrintMeanStdData( inputMat, inputSubject, outputDir ):
+    
+    StatsListLen = len(inputMat) 
+    headerStr = ['Volume', 'Mean','Std']
+    fileName = inputSubject + '_FourierSlopeStatistics_' +str(len(numpyNipyDataSz))+ '_MeanStd.txt'
+
+    if not os.path.exists(outputDir):
+        os.makedirs(outputDir)
+    fileStatsId = csv.writer(open(outputDir +os.sep+ fileName, 'wb'), delimiter='\t')
+    fileStatsId.writerow(headerStr)
+    
+    for i in xrange(0, StatsListLen):
+            fileStatsId.writerow(inputMat[i,:])
+
+#===============================================================================
+def fStripSession( inputName ):
+    # check for session on input subject string...
+    if (inputName.find("_v") != -1):
+        # strip out the session stuff.
+        underscoreStartIdx = inputName.index("_")
+        underscoreEndIdx = inputName[underscoreStartIdx+1:len(inputName)].index("_")
+        outputName = inputName[0:underscoreStartIdx] + inputName[underscoreStartIdx+underscoreEndIdx+1:len(inputName)]
+    else:
+        outputName = inputName
+        
+    return outputName
+#===============================================================================
+def fStripExtension( inputName ):
+    inputNameNoExtension, inputNameExtension = os.path.splitext(inputName)
+    
+    if inputNameExtension == '.gz':
+        inputNameNoExtension, inputNameExtension = os.path.splitext(inputNameNoExtension)
+        return inputNameNoExtension
+    else:
+        return inputNameNoExtension
 #===============================================================================
 
 if __name__ == "__main__":
 
-#    print mp.cpu_count()
+#    fFourierRegressCoeffs( range(0,numpyNipyDataSz[2]) )
+    pool = Pool(processes=mp.cpu_count())
     sTime = time.time()
-    p = Process(target=fFourierRegressCoeffs, args=(SliceIdxs, coeffsArray))
-    p.start()
-    p.join()
+    result = pool.map(fFourierRegressCoeffs, [320])
     print("Duration: %s" % str(time.time() - sTime))
+#    result = pool.apply_async(fFourierRegressCoeffs, range(0,numpyNipyDataSz[2]))
+#    pool.close() #we are not adding any more processes
+#    pool.join() #tell it to wait until all threads are done before going on
+    print result
     
-    print p, coeffsArray[:]
     
 #===============================================================================
 # http://www.sqlservercentral.com/blogs/sqlwise/2012/12/21/a-really-simple-multiprocessing-python-example/

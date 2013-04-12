@@ -295,10 +295,10 @@ class getHCP(pyHCP):
                             SubjectSessionsType.append('diff')
                             SubjectSessionsID.append(currSession)
                         if ('tfMRI' in SessionTypeList):
-                            SubjectSessionsType.append('task')
+                            SubjectSessionsType.append('fnc')
                             SubjectSessionsID.append(currSession)
                         if ('rfMRI' in SessionTypeList):
-                            SubjectSessionsType.append('rest')
+                            SubjectSessionsType.append('fnc')
                             SubjectSessionsID.append(currSession)
                             
                     else:
@@ -523,6 +523,7 @@ class getHCP(pyHCP):
         Sizes = list()
         URIs = list()
         Collections = list()
+        RealPath = list()
         FilePath = list()
         FileTags = list()
         FileFormats = list()
@@ -580,12 +581,14 @@ class getHCP(pyHCP):
                 FileObj = open(FilePath[-1], 'r')
                 # if readable:
                 FileReadable.append(True)
+                RealPath.append(os.path.realpath(FilePath[-1]))
             except IOError, e:
                 if self.Verbose:
                     print 'getScanMeta(): File read error number: %s, error code: %s, and error message: %s' % (e.errno, errno.errorcode[e.errno], os.strerror(e.errno))
                 FileReadable.append(False)
+                RealPath.append('NA')
                 
-        SubjectResourceMeta = {'Name': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Label': Collections, 'Format': FileFormats, 'Contents': FileContents}
+        SubjectResourceMeta = {'Name': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'RealPath': RealPath, 'Label': Collections, 'Format': FileFormats, 'Contents': FileContents}
         return SubjectResourceMeta
     #===============================================================================
     def getFileInfo( self, URL ):
@@ -754,6 +757,9 @@ class getHCP(pyHCP):
             echoSpacing = 'NA'
         try:
             peDirection = scanParms.find('{http://nrg.wustl.edu/xnat}peDirection').text
+            # Here be a hack for the +x, x+ stuff...
+            if ('+' in peDirection):
+                peDirection = peDirection.replace('+', '')
         except:
             peDirection = 'NA'
         try:
@@ -772,6 +778,10 @@ class getHCP(pyHCP):
             TE = scanParms.find('{http://nrg.wustl.edu/xnat}te').text
         except:
             TE = 'NA'
+        try:
+            GEFieldMapGroup = scanParms.find('{http://nrg.wustl.edu/xnat}geFieldMapGroup').text
+        except:
+            GEFieldMapGroup = 'NA'
         
         
         for addParms in scanParms.findall('{http://nrg.wustl.edu/xnat}addParam'):
@@ -785,7 +795,7 @@ class getHCP(pyHCP):
         
         scanParms = { 'SampleSpacing': sampleSpacing, 'alShimCurrent': alShimCurrent, 'LinearOffset':  LinOffset, 'AcquisitionTime': acquisitionTime, 'VoxelResolution': voxelResolution, 'Orientation': orientation, \
                             'FOV': FOV, 'TR': TR, 'TE': TE, 'FlipAngle': flipAngle, 'ScanSequence': scanSequence, 'PixelBandwidth': pixelBandwidth, 'ReadoutDirection': readoutDirection, 'EchoSpacing': echoSpacing, \
-                            'PhaseEncodingDir': peDirection, 'ShimGroup': shimGroup, 'SEFieldmapGroup': seFieldMapGroup, 'DeltaTE': deltaTE  }
+                            'PhaseEncodingDir': peDirection, 'ShimGroup': shimGroup, 'SEFieldmapGroup': seFieldMapGroup, 'DeltaTE': deltaTE, 'GEFieldMapGroup': GEFieldMapGroup }
         return scanParms
     #===============================================================================    
     def getScanMeta( self ):
@@ -991,7 +1001,11 @@ class writeHCP(getHCP):
             currFilePathNameSplit = currFilePathName.split('/')
             currFileNameIdx = currFilePathNameSplit.index(os.path.basename(currFilePathName))
             try: 
-                currResourceRootIdx = currFilePathNameSplit.index('RESOURCES') + 1
+                #===============================================================
+                # CAUTION HERE...
+                #===============================================================
+#                currResourceRootIdx = currFilePathNameSplit.index('RESOURCES') + 1
+                currResourceRootIdx = currFilePathNameSplit.index('RESOURCES') + 2
             except:
                 currResourceRootIdx = currFileNameIdx
             

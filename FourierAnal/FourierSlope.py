@@ -31,7 +31,7 @@ fracElimSlices = InputArgs.fracElimSlices
 fracElimSlicesUse = InputArgs.fracElimSlicesUse
 #===============================================================================
 
-sTime = time.time()
+
 print "Running on " + socket.gethostname()
 freqCutoffLow = 2;
 freqCutoffHigh = 60;
@@ -152,6 +152,7 @@ print "Eliminating " +str( round(numpyNipyDataSz[2] - sum(boolElimSlices)) )+ " 
 if len(numpyNipyDataSz) == 3:
     currVol = numpyNipyData    
     regressCoeffsResults = numpy.zeros([numpyNipyDataSz[2], 7])
+    sTime = time.time()
     for i in xrange(0, numpyNipyDataSz[2]):
         currSlice = currVol[:,:,i]
 
@@ -165,6 +166,8 @@ if len(numpyNipyDataSz) == 3:
 #        pyplot.figure()
 #        pyplot.imshow(regressCoeffsResults, interpolation='none')
         pyplot.show()
+        
+    print("Duration: %s" % str(time.time() - sTime))
 
 elif len(numpyNipyDataSz) == 4:
     linIdx = 0
@@ -192,8 +195,7 @@ if printData:
         fPrintMeanStdData( volumeMeansStd, outputName, outputDir )
     
 
-tTime = time.time() - sTime
-print("Duration: %s" % tTime)
+
 
 
 #pngImg = Image.open("C:\Users\Tony\Pictures\Lena.jpg")

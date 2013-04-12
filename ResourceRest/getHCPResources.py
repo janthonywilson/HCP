@@ -8,6 +8,8 @@ import os
 import sys
 import socket
 import argparse
+import operator
+import itertools
 import subprocess
 # Time manipulation...
 import time
@@ -20,20 +22,15 @@ sTime = time.time()
 #===============================================================================
 # -Scan should accept a list...
 #===============================================================================
+
+
+#===============================================================================
 # PARSE INPUT
 #===============================================================================
 # Examples:
-# -User tony -Password passfoo -Server hcpx-dev-cuda00.nrg.mir -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Scan 108 -FileType NIFTI -OutputDir C:\tmp\HCP -Strip strc
-# -User tony -Password passfoo -Server intradb.humanconnectome.org -Project HCP_Phase2 -Subject 100307 -Session 100307_strc -Scan 19 -FileType NIFTI -OutputDir C:\tmp\HCP -Strip None
-# -User tony -Password passfoo -Server hcpx-dev-cuda00.nrg.mir -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Scan 108 -FileType NIFTI -OutputDir /home/NRG/jwilso01/tmp/HCP -Strip 3T
-# -User tony -Password passfoo -Server hcpx-demo3.humanconnectome.org -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource tfMRI_WM_RL_unproc -FileType NIFTI -OutputDir C:\tmp\HCP -Strip None
-# -User tony -Password passfoo -Server hcpx-dev-cuda00.nrg.mir -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource tfMRI_WM_RL_unproc -ResourceRoot LINKED_DATA -FileType NIFTI,TXT -OutputDir C:\tmp\HCP -Strip None
-# -User tony -Password passfoo -Server hcpx-demo.humanconnectome.org -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource tfMRI_WM_RL_unproc -ResourceRoot tfMRI_WM_RL_unproc -OutputDir C:\tmp\HCP -Strip None
-# -Server https://hcpx-dev-cuda00.nrg.mir/ -User tony -Password passfoo -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Scan 109 -FileType NIFTI -OutputFile 100307_T1w_MPR1.nii.gz -OutputDir C:\tmp
-# DIFFUSION: -Files T1w_acpc_dc.nii.gz,T1w_acpc_dc_restore.nii.gz,T1w_acpc_dc_restore_brain.nii.gz,BiasField_acpc_dc.nii.gz,brainmask_fs.nii.gz,
+# -Server https://hcpx-dev-cuda00.nrg.mir/ -User tony -Password passfoo -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource Structural_preproc -OutputDir C:\tmp\strc -ResourcePath T1w/ -Flatten False
 #===============================================================================
 parser = argparse.ArgumentParser(description="Program to get files from resources for HCP pipelines...")
-# input...
 parser.add_argument("-User", "--User", dest="User", default='tony', type=str)
 parser.add_argument("-Password", "--Password", dest="Password", type=str)
 parser.add_argument("-Project", "--Project", dest="Project", type=str, default=None, help="pick project")
@@ -96,14 +93,27 @@ if (FileType is not None) and (FileType.find(',') != -1):
     
 if (Files is not None) and (Files.find(',') != -1):
     Files = Files.split(',')
+elif (Files is not None):
+    Files = [Files]
     
 if (ResourcePath is None):
     ResourcePath = Resource
+
+try:
+    ResourcePathSplit = ResourcePath.split('/')
+    ResourcePath = os.path.dirname(ResourcePath)
+except:
+    ResourcePathSplit = []
     
 if (Flatten == 'False'):
     Flatten = False
 else:
     Flatten = True
+    
+try:
+    ScanList = Scan.split(',')
+except:
+    ScanList = [Scan]
     
 if not os.path.exists(OutputDir):
     os.makedirs(OutputDir)
@@ -119,7 +129,7 @@ writeHCP.Flatten = Flatten
 getHCP.Project = Project
 getHCP.Subject = Subject
 getHCP.Session = Session
-getHCP.Scan = Scan
+
 
 FileName = list()
 FileURIName = list()
@@ -155,14 +165,13 @@ if (Resource is not None):
         # if entire RESOURCE is requested...
         #=======================================================================
         if (Files == None):
-            if (ResourceMeta.get('Path')[i].find(Resource +'/'+ ResourcePath +'/') > 0) and (ResourcePath[-1] == '/*'):
+
+            FilesepIdx = [j for j, x in enumerate(ResourceMeta.get('Path')[i]) if x == '/']
+            
+            # try to catch the wildcard, so all subdirectories get pulled too...
+            if (ResourceMeta.get('Path')[i].find(Resource +'/'+ ResourcePath +'/') > 0) and (ResourcePathSplit[-1] == '*'):
                 ResourceMetaList = ResourceMeta.get('Path')[i].split('/')
     
-                    #===========================================================
-                    # <!--For diffusion...-->
-                    # <!--T1w/*, T1w/xfms/*, T1w/<subject>/surf/*, T1w/<subject>/label/*, T1w/<subject>/mri/*, T1w/<subject>/mri/transforms/*, T1w/<subject>/stats/*, T1w/<subject>/touch/*-->
-                    # <!--MNINonLinear/*, MNINonLinear/xfms/*-->
-                    #===========================================================
                 if (Resource in ResourceMetaList):
                     FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
 #                    ResourceRestIdx = ResourceMetaList.index(ResourcePath)
@@ -170,7 +179,16 @@ if (Resource is not None):
                     FileURIName.append(ResourceMeta.get('URI')[i])
                 else:
                     print 'ERROR: %s is not in %s.' % (ResourcePath, ResourceMeta.get('Path')[i])
-    #                sys.exit()
+                    # sys.exit()
+                    
+            # try to catch just the directory in resourcepath...
+            elif (ResourceMeta.get('Path')[i].find(Resource +'/'+ ResourcePath +'/') > 0):
+                if (( ResourceMeta.get('Path')[i].index(Resource +'/'+ ResourcePath +'/') + len(Resource +'/'+ ResourcePath +'/') -1 ) == FilesepIdx[-1]):
+                    FilePathNameReadable.append(ResourceMeta.get('Readable')[i])
+                    FilePathName.append(ResourceMeta.get('Path')[i])
+                    FileURIName.append(ResourceMeta.get('URI')[i])
+                                                                                                    
+                                                                                                 
         #=======================================================================
         # else grab just some files from RESOURCE...
         #=======================================================================
@@ -187,36 +205,48 @@ if (Resource is not None):
 
     
 else:
-    ScanMeta = getHCP.getScanMeta()
-    CollectionsIdx = ScanMeta.get('Format').index(FileType)
-    FilePathNameReadable.append(ScanMeta.get('Readable')[CollectionsIdx])
+    #===========================================================================
+    # NOTE: Scans being collected, directory structure not present.  Flatten has no affect...
+    #===========================================================================
+    for i in xrange(0, len(ScanList)):
+        getHCP.Scan = ScanList[i]
+        ScanMeta = getHCP.getScanMeta()
+        CollectionsIdx = ScanMeta.get('Format').index(FileType)
+        FilePathNameReadable.append(ScanMeta.get('Readable')[CollectionsIdx])
+        
+        currPath = ScanMeta.get('Path')[CollectionsIdx]
+        currURI = ScanMeta.get('URI')[CollectionsIdx]
+        
+        if (OutputFile is not None):
+            currPathBase = os.path.dirname(currPath)
+            currURIBase = os.path.dirname(currURI)
+            OutputFileName.append(OutputFile)
+            OutputFilePathName.append(os.path.normpath(OutputDir +os.sep+ OutputFile))
+            OutputFileURIName.append(os.path.normpath(OutputDir +os.sep+ OutputFile))
+        else:
+            OutputFileName.append(ScanMeta.get('Name')[CollectionsIdx])
+            FileName.append(ScanMeta.get('Name')[CollectionsIdx])
     
-    currPath = ScanMeta.get('Path')[CollectionsIdx]
-    currURI = ScanMeta.get('URI')[CollectionsIdx]
+        FilePathName.append(currPath)
+        FileURIName.append(currURI)
     
-    if (OutputFile is not None):
-        currPathBase = os.path.dirname(currPath)
-        currURIBase = os.path.dirname(currURI)
-        OutputFileName.append(OutputFile)
-        OutputFilePathName.append(os.path.normpath(OutputDir +os.sep+ OutputFile))
-        OutputFileURIName.append(os.path.normpath(OutputDir +os.sep+ OutputFile))
-    else:
-        OutputFileName.append(ScanMeta.get('Name')[CollectionsIdx])
-        FileName.append(ScanMeta.get('Name')[CollectionsIdx])
-
-    FilePathName.append(currPath)
-    FileURIName.append(currURI)
     
-                
-if all(FilePathNameReadable):
-    print ('cp %s %s' % (FilePathName, OutputFileName))
+#Write = True    
+#if Write:        
+if FilePathNameReadable and all(FilePathNameReadable):
+    print ('cp %s %s' % (FilePathName, writeHCP.DestinationDir))
     writeHCP.writeFileFromPath(FilePathName, OutputFileName)
+    print 'Written bytes: ' + ', '.join(map(str, writeHCP.BytesWrite))
 else:
     print ('Destination: %s  URI: %s' % (OutputDir, FileName))
     writeHCP.writeFileFromURL(getHCP, FileURIName, FileName)
     print 'Streamed bytes: ' + ', '.join(map(str, writeHCP.BytesStream))
+    print 'Written bytes: ' + ', '.join(map(str, writeHCP.BytesWrite))
+    print 'Delta bytes: ' + ', '.join(map(str, list(itertools.imap(operator.sub, writeHCP.BytesStream, writeHCP.BytesWrite))))
     
-print 'Written bytes: ' + ', '.join(map(str, writeHCP.BytesWrite))
+
+
+print 'Total bytes: %s' % (sum(writeHCP.BytesWrite))
 print("Duration: %s" % (time.time() - sTime))
     
     

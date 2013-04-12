@@ -41,30 +41,10 @@ parser.add_argument("-FunctSeries", "--FunctSeries", dest="FunctSeries", default
 parser.add_argument("-Project", "--Project", dest="Project", default='HCP_Phase2', type=str)
 parser.add_argument("-Shadow", "--Shadow", dest="Shadow", default=None, type=str)
 parser.add_argument("-Build", "--Build", dest="Build", default=None, type=str)
-
+parser.add_argument("-Compute", "--Compute", dest="Compute", default='NRG', type=str)
 
 parser.add_argument("-Production", "--Production", dest="iProduction", default=False, type=bool)
 
-
-#===============================================================================
-# parser.add_argument("-HCPid", "--HCPid", dest="iHCPid", default='HCPIntradb_E00000', type=str)
-# parser.add_argument("-Label", "--Label", dest="iLabel", default='00', type=str)
-# parser.add_argument("-FuncScanId", "--FuncScanId", dest="FuncScanId", default='00', type=str)
-# parser.add_argument("-ScoutScanId", "--ScoutScanId", dest="iScoutScanId", default='00', type=str)
-# parser.add_argument("-UnwarpDir", "--UnwarpDir", dest="iUnwarpDir", default='x', type=str)
-# # structural...
-# parser.add_argument("-StructSeries", "--SturctSeries", dest="iStructSeries", default='T1w_MPR1', type=str)
-# parser.add_argument("-T1wScanId_1", "--T1wScanId_1", dest="iT1wScanId_1", default='00', type=str)
-# parser.add_argument("-T1wScanId_2", "--T1wScanId_2", dest="iT1wScanId_2", default='00', type=str)
-# parser.add_argument("-T2wScanId_1", "--T2wScanId_1", dest="iT2wScanId_1", default='00', type=str)
-# parser.add_argument("-T2wScanId_2", "--T2wScanId_2", dest="iT2wScanId_2", default='00', type=str)
-# parser.add_argument("-T1wSeriesDesc_1", "--T1wSeriesDesc_1", dest="iT1wSeriesDesc_1", default='T1w_MPR1', type=str)
-# parser.add_argument("-T1wSeriesDesc_2", "--T1wSeriesDesc_2", dest="iT1wSeriesDesc_2", default='T1w_MPR2', type=str)
-# parser.add_argument("-T2wSeriesDesc_1", "--T2wSeriesDesc_1", dest="iT2wSeriesDesc_1", default='T2w_SPC1', type=str)
-# parser.add_argument("-T2wSeriesDesc_2", "--T2wSeriesDesc_2", dest="iT2wSeriesDesc_2", default='T2w_SPC2', type=str)
-# # diffusion...
-# parser.add_argument("-DiffSeries", "--DiffSeries", dest="iDiffSeries", default='DWI_RL_dir95', type=str)
-#===============================================================================
 
 args = parser.parse_args()
 
@@ -79,13 +59,15 @@ FunctSeries = args.FunctSeries
 Project = args.Project
 Shadow = args.Shadow
 Build = args.Build
+Compute = args.Compute
 
 if (Server.find('intra') != -1) or (Server.find('hcpi') != -1):
     dbStr = 'intradb'
     if (Pipeline == 'FunctionalHCP'): 
         print 'Series Descriptions Changed: IntraDB FunctionalHCP broken...'
         sys.exit()
-elif (Server.find('hcpx') != -1):
+        
+elif (Server.find('hcpx') != -1) or (Server.find('db.humanconnectome') != -1):
     dbStr = 'hcpdb'
 
 #===============================================================================
@@ -105,6 +87,15 @@ else:
     XnatServer = '-parameter xnatserver=ConnectomeDB '
 AdminEmail = '-parameter adminemail=db-admin@humanconnectome.org '
 UserEmail = '-parameter useremail=wilsont@mir.wustl.edu '
+if (Compute == 'NRG'):
+    TemplatesDir = '/nrgpackages/atlas/HCP/'
+    ConfigDir = '/nrgpackages/tools/HCP/conf/'
+    CaretAtlasDir = '/nrgpackages/atlas/HCP/standard_mesh_atlases/'
+elif (Compute == 'CHPC'):
+    TempaltesDir = '/NRG/BlueArc/nrgpackages/atlas/HCP/'
+    ConfigDir = '/NRG/BlueArc/nrgpackages/tools/HCP/conf/'
+    CaretAtlasDir = '/NRG/BlueArc/nrgpackages/atlas/HCP/standard_mesh_atlases/'
+     
 #===============================================================================
 # HACK for REST RL/LR...
 #===============================================================================
@@ -224,7 +215,7 @@ for h in xrange(0, len(SubjectsList)):
                 sessionMeta = getHCP.getSessionMeta()
                 
         elif (Pipeline.find('Struct') != -1):
-            print 'Looking at StructuralHCP...'
+#            print 'Looking at StructuralHCP...'
             structSessionIdx = SubjectSessions.get('Types').index('strc')
             getHCP.Session = SubjectSessions.get('Sessions')[structSessionIdx]
             sessionMeta = getHCP.getSessionMeta()
@@ -252,6 +243,10 @@ for h in xrange(0, len(SubjectsList)):
         launcherXnatId = '-parameter xnat_id=%s ' % sessionMeta.get('XNATID')[0] 
         launcherSession = '-parameter sessionid=%s ' % getHCP.Session 
         launcherSubject = '-parameter subjects=%s ' % getHCP.Subject
+        
+        launcherTemplatesDir = '-parameter templatesdir=%s ' % TemplatesDir
+        launcherConfigDir = '-parameter configdir=%s ' % ConfigDir
+        launcherCaretAtlasDir = '-parameter CaretAtlasDir=%s ' % CaretAtlasDir
 
         
         if (len(FunctionalList) > 1):
@@ -261,8 +256,8 @@ for h in xrange(0, len(SubjectsList)):
         BuildDir = '-parameter builddir=%s ' % (currBuildDir)
 
         
-        if not os.path.exists(currBuildDir + os.sep + getHCP.Subject) and sys.platform != 'win32':
-            os.makedirs(currBuildDir + os.sep + getHCP.Subject)
+#        if not os.path.exists(currBuildDir + os.sep + getHCP.Subject) and sys.platform != 'win32':
+#            os.makedirs(currBuildDir + os.sep + getHCP.Subject)
             
         RedirectionStr = ' > ' + currBuildDir.replace(' ', '') + os.sep + getHCP.Subject + os.sep + Pipeline + 'LaunchSTDOUT.txt'
         
@@ -281,8 +276,9 @@ for h in xrange(0, len(SubjectsList)):
             # grab a dummy scan id to feed to XML if scan does not exist.  XML must have scan id, else it will break...
             #===================================================================
             DummyScanId = sessionMeta.get('IDs')[0]
-            EchoSpacing = '-parameter EchoSpacing=0.7800117313764398 '
-            PhaseEncodingDir = '-parameter PhaseEncodingDir=1 '
+            EchoSpacingList = list()
+            PhaseEncodingDirList = list() 
+
             
             # if intradb...
             if (dbStr == 'intradb'):
@@ -308,6 +304,9 @@ for h in xrange(0, len(SubjectsList)):
                     scanParms = getHCP.getScanParms()
                     scanMeta = getHCP.getScanMeta()
                     
+                    EchoSpacingList.append(float(scanParms.get('EchoSpacing')) * 1.0e+3)
+                    PhaseEncodingDirList.append(scanParms.get('PhaseEncodingDir'))
+                    
                     # ScanIdDict['LR_2ScanId'] = '-parameter LR_2ScanId=%s ' % str(currScanId)
                     if (currQuality in UsableList):
                         DiffusionScanIdDict[DiffusionScanIdList[DiffusionSeriesList.index(currDiffDesc)]] = '-parameter %s=%s ' % (DiffusionScanIdList[DiffusionSeriesList.index(currDiffDesc)], currScanId)
@@ -319,6 +318,9 @@ for h in xrange(0, len(SubjectsList)):
                     DiffusionScanIdDict[DiffusionScanIdList[DiffusionSeriesList.index(currDiffDesc)]] = '-parameter %s=%s ' % (DiffusionScanIdList[DiffusionSeriesList.index(currDiffDesc)], DummyScanId)
                     DiffusionDirDict[DiffusionDirList[DiffusionSeriesList.index(currDiffDesc)]] = 'EMPTY'
             
+            launcherEchoSpacing = '-parameter EchoSpacing=%s ' % (sum(EchoSpacingList) / float(len(EchoSpacingList)))
+            # 1 for RL/LR phase encoding and 2 for AP/PA phase encoding
+            launcherPhaseEncodingDir = '-parameter PhaseEncodingDir=1 '
             
             launcherLR_Dir1 = '-parameter LR_Dir1=%s ' % DiffusionDirDict['LR_Dir1']
             launcherLR_Dir2 = '-parameter LR_Dir2=%s ' % DiffusionDirDict['LR_Dir2']
@@ -328,7 +330,7 @@ for h in xrange(0, len(SubjectsList)):
             launcherRL_Dir3 = '-parameter RL_Dir3=%s ' % DiffusionDirDict['RL_Dir3']
             
             SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherSession + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
-            EchoSpacing + PhaseEncodingDir + launcherSubject + BuildDir + launcherLR_Dir1 + launcherLR_Dir2 + launcherLR_Dir3 + launcherRL_Dir1 + launcherRL_Dir2 + launcherRL_Dir3 + \
+            launcherEchoSpacing + launcherPhaseEncodingDir + launcherSubject + BuildDir + launcherLR_Dir1 + launcherLR_Dir2 + launcherLR_Dir3 + launcherRL_Dir1 + launcherRL_Dir2 + launcherRL_Dir3 + \
             DiffusionScanIdDict['RL_1ScanId'] + DiffusionScanIdDict['RL_2ScanId'] + DiffusionScanIdDict['RL_3ScanId'] + DiffusionScanIdDict['LR_1ScanId'] + DiffusionScanIdDict['LR_2ScanId'] + DiffusionScanIdDict['LR_3ScanId'] + RedirectionStr
             
             if sys.platform == 'win32':
@@ -343,10 +345,11 @@ for h in xrange(0, len(SubjectsList)):
         #=======================================================================
         elif (Pipeline == 'StructuralHCP'):
             
-            iT1wSeriesDesc_1 = 'T1w_MPR1'
-            iT1wSeriesDesc_2 = 'T1w_MPR2' 
-            iT2wSeriesDesc_1 = 'T2w_SPC1'
-            iT2wSeriesDesc_2 = 'T2w_SPC2'
+            PathMatch = list()
+            ScanIdList = list()
+            StructResources = ['T1w_MPR1_unproc', 'T1w_MPR2_unproc', 'T2w_SPC1_unproc', 'T2w_SPC2_unproc']
+            getHCP.Resource = StructResources[0]
+            resourceMeta = getHCP.getSubjectResourceMeta()
             
 
             StructuralSeriesDescDict = {'T1w_MPR1' : 'T1w_MPR1', 'T1w_MPR2' : 'T1w_MPR2', 'T2w_SPC1' : 'T2w_SPC1', 'T2w_SPC2' : 'T2w_SPC2'}
@@ -360,9 +363,15 @@ for h in xrange(0, len(SubjectsList)):
             filedmapPhaIdx = seriesList.index('FieldMap_Phase')
             if (typeList[fieldmapMagIdx] == 'FieldMap') and (qualityList[fieldmapMagIdx] in UsableList): 
                 MagScanId = idList[fieldmapMagIdx]
+                getHCP.Scan = MagScanId
+                magScanParms = getHCP.getScanParms()
+                
                 
             if (typeList[filedmapPhaIdx] == 'FieldMap') and (qualityList[filedmapPhaIdx] in UsableList):
                 PhaScanId = idList[filedmapPhaIdx]
+                getHCP.Scan = PhaScanId
+                phaScanParms = getHCP.getScanParms()
+                
                     
             # collect quality, series descriptions, and scan ids...
             for j in xrange(0, len(seriesList)):
@@ -409,20 +418,26 @@ for h in xrange(0, len(SubjectsList)):
             launcherT2wSeriesDesc_1 = '-parameter t2seriesdesc_1=%s ' % StructuralSeriesDescDict.get('T2w_SPC1')
             launcherT2wSeriesDesc_2 = '-parameter t2seriesdesc_2=%s ' % StructuralSeriesDescDict.get('T2w_SPC2')
         
+            # Collect scan ids for later testing...
+            ScanIdList.append(MagScanId)
+            ScanIdList.append(PhaScanId)
+            ScanIdList.append(StructuralSeriesDescScanIdDict.get('T1w_MPR1'))
+            ScanIdList.append(StructuralSeriesDescScanIdDict.get('T1w_MPR2'))
+            ScanIdList.append(StructuralSeriesDescScanIdDict.get('T2w_SPC1'))
+            ScanIdList.append(StructuralSeriesDescScanIdDict.get('T2w_SPC2'))
+            ScanIdList = list(set(ScanIdList))
+            
             getHCP.Scan = StructuralSeriesDescScanIdDict.get('T1w_MPR1')
             scanParms = getHCP.getScanParms( )
             sampleSpacingT1w = scanParms.get('SampleSpacing')
             
-            getHCP.Scan = MagScanId
-            magScanParms = getHCP.getScanParms( )
-            TE = scanParms.get('TE')
-            
             getHCP.Scan = StructuralSeriesDescScanIdDict.get('T2w_SPC1')
             sampleSpacingT2w = getHCP.getScanParms( ).get('SampleSpacing')
             
+            TE = magScanParms.get('DeltaTE')
             launcherTE = '-parameter TE=%s ' % (TE)
-            launcherT1wSampleSpacing = "-parameter T1wSampleSpacing=%1.9f " % (float(sampleSpacingT1w)/1.0e+9)
-            launcherT2wSampleSpacing = "-parameter T2wSampleSpacing=%1.9f " % (float(sampleSpacingT2w)/1.0e+9)
+            launcherT1wSampleSpacing = '-parameter T1wSampleSpacing=%1.9f ' % (float(sampleSpacingT1w)/1.0e+9)
+            launcherT2wSampleSpacing = '-parameter T2wSampleSpacing=%1.9f ' % (float(sampleSpacingT2w)/1.0e+9)
             
             launcherT1wTemplate = '-parameter T1wTemplate=MNI152_T1_0.7mm.nii.gz '
             launcherT1wTemplateBrain = '-parameter T1wTemplateBrain=MNI152_T1_0.7mm_brain.nii.gz '
@@ -431,18 +446,37 @@ for h in xrange(0, len(SubjectsList)):
             launcherTemplateMask = '-parameter TemplateMask=MNI152_T1_0.7mm_brain_mask.nii.gz '
             
             # for PostFS...
-            launcherFinalTemplateSpace = '-parameter FinalTemplateSpace=MNI152_T1_0.7mm.nii.gz'
+            launcherFinalTemplateSpace = '-parameter FinalTemplateSpace=MNI152_T1_0.7mm.nii.gz '
             
             SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             BuildDir + launcherSession + launcherSubject + launcherMagScanId + launcherPhaScanId + launcherT1wScanId_1 + launcherT1wScanId_2 + \
             launcherT2wScanId_1 + launcherT2wScanId_2 + launcherT1wSeriesDesc_1 + launcherT1wSeriesDesc_2 + launcherT2wSeriesDesc_1 + launcherT2wSeriesDesc_2 + launcherTE + launcherT1wSampleSpacing + launcherT2wSampleSpacing + launcherT1wTemplate + \
-            launcherT1wTemplateBrain + launcherT2wTemplate + launcherT2wTemplateBrain + launcherTemplateMask + launcherFinalTemplateSpace + RedirectionStr
+            launcherT1wTemplateBrain + launcherT2wTemplate + launcherT2wTemplateBrain + launcherTemplateMask + launcherFinalTemplateSpace + launcherTemplatesDir + launcherConfigDir + launcherCaretAtlasDir + RedirectionStr
             
-            if sys.platform == 'win32':
-                print SubmitStr
+            # print scanParms.get('GEFieldMapGroup'), magScanParms.get('GEFieldMapGroup'), phaScanParms.get('GEFieldMapGroup')
+            if (scanParms.get('GEFieldMapGroup') == magScanParms.get('GEFieldMapGroup') == phaScanParms.get('GEFieldMapGroup')):
+                if sys.platform == 'win32':
+                    print SubmitStr
+                else:
+                    # do T1w and T2w path test...
+                    for j in xrange(0, len(StructResources)):
+                        getHCP.Resource = StructResources[j]
+                        resourcePath = getHCP.getSubjectResourceMeta().get('RealPath')
+                        getHCP.Scan = StructuralSeriesDescScanIdDict.get(StructuralSeriesList[j])
+                        # this is a hack to account for archive1,2,3 and the discrepancy in the DB...
+                        scanPathSplit = getHCP.getScanMeta().get('Path')[0].split('/')
+                        scanPathSub = '/'.join(scanPathSplit[scanPathSplit.index(Project):])
+                        if resourcePath:
+                            if (' '.join(resourcePath).index(scanPathSub) != -1): PathMatch.append(True)
+                            else: PathMatch.append(False)
+                    
+                    if all(PathMatch):
+                        print SubmitStr
+                        #os.system(SubmitStr)
+                    else:
+                        print 'ERROR: file paths mismatch for subject %s, session %s, pipeline %s, on server %s.' % (getHCP.Subject, getHCP.Session, Pipeline, getHCP.Server)
             else:
-                print SubmitStr
-                os.system(SubmitStr)
+                print 'ERROR: GEFieldMapGroup mismatch for subject %s, session %s, pipeline %s, on server %s.' % (getHCP.Subject, getHCP.Session, Pipeline, getHCP.Server) 
                 
         #=======================================================================
         # FunctionalHCP
@@ -466,7 +500,9 @@ for h in xrange(0, len(SubjectsList)):
                 print 'OOPS, FunctionalHCP mismatch with FunctionalList SBRef and FunctSeries'
             
             getHCP.Scan = FuncScanId
-            scanMeta = getHCP.getScanMeta()
+            fucntScanMeta = getHCP.getScanMeta()
+            functScanParms = getHCP.getScanParms()
+            
             
             #===================================================================
             # Here be dragons...series descriptions changed for CDB, broke IntraDB
@@ -513,9 +549,14 @@ for h in xrange(0, len(SubjectsList)):
         
             
             minMagIdx = magScanDiffList.index(min(magScanDiffList)) 
-            MagScanId = magScanIdList[minMagIdx]
             minPhaIdx = phaScanDiffList.index(min(phaScanDiffList)) 
-            PhaScanId = phaScanIdList[minPhaIdx]
+            functMagGroupIdx = magShimGroupList.index(functScanParms.get('ShimGroup'))
+            functPhaGroupIdx = phaShimGroupList.index(functScanParms.get('ShimGroup'))
+            
+
+                
+            MagScanId = magScanIdList[functMagGroupIdx]
+            PhaScanId = phaScanIdList[functPhaGroupIdx]
             #------------------------------------------
             launcherMagScanId = '-parameter magscanid=%s ' % (MagScanId)
             launcherPhaScanId = '-parameter phascanid=%s ' % (PhaScanId)
@@ -523,8 +564,9 @@ for h in xrange(0, len(SubjectsList)):
             launcherFuncScanId = '-parameter functionalscanid=%s ' % (FuncScanId)
             launcherScoutScanId = '-parameter scoutscanid=%s ' % (ScoutScanId)
             launcherFunctSeries = '-parameter functionalseries=%s ' % (currSeries)
-            launcherLR_Fieldmap = '-parameter lr_fieldmapseries=BOLD_LR_SB_SE '
-            launcherRL_Fieldmap = '-parameter rl_fieldmapseries=BOLD_RL_SB_SE '
+#            100307_3T_SpinEchoFieldMap_LR.nii.gz
+            launcherLR_Fieldmap = '-parameter lr_fieldmapseries=SpinEchoFieldMap_LR '
+            launcherRL_Fieldmap = '-parameter rl_fieldmapseries=SpinEchoFieldMap_RL '
             launcherDwellTime = '-parameter DwellTime=%s ' % (str( float(FuncScanParms.get('EchoSpacing')) ))
             launcherUnwarpDir = '-parameter UnwarpDir=%s ' % (FuncScanParms.get('PhaseEncodingDir'))
             launcherDistortionCorrect = '-parameter DistortionCorrection=TOPUP '
@@ -535,13 +577,19 @@ for h in xrange(0, len(SubjectsList)):
             
             SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             BuildDir + launcherSession + launcherSubject + launcherMagScanId + launcherPhaScanId + launcherFuncScanId + launcherScoutScanId + \
-            launcherFunctSeries + launcherLR_Fieldmap + launcherRL_Fieldmap + launcherDwellTime + TE + launcherUnwarpDir + launcherDistortionCorrect + RedirectionStr
+            launcherFunctSeries + launcherLR_Fieldmap + launcherRL_Fieldmap + launcherDwellTime + TE + launcherUnwarpDir + launcherDistortionCorrect + launcherTemplatesDir + launcherConfigDir + launcherCaretAtlasDir + RedirectionStr
             
-            if sys.platform == 'win32':
-                print SubmitStr
+            if (magShimGroupList[minMagIdx] == phaShimGroupList[minPhaIdx] == functScanParms.get('ShimGroup')) and (functScanParms.get('SEFieldMapGroup') == magScanParms.get('SEFieldMapGroup') == phaScanParms.get('SEFieldMapGroup')):
+                print 'ShimGroup and SEFieldMapGroup match successful...'
+                if sys.platform == 'win32':
+                    print SubmitStr
+                else:
+                    print SubmitStr
+                    os.system(SubmitStr)
             else:
-                print SubmitStr
-                os.system(SubmitStr)
+                print 'WARNING: ShimGroup or SEFieldMapGroup mismatch for subject %s, session %s, series %s, on server %s.' % (getHCP.Subject, getHCP.Session, currSeries, getHCP.Server)
+                
+
                 
         #===============================================================================
         # FIX HCP....
