@@ -716,6 +716,7 @@ class getHCP(pyHCP):
         parmsET = ET.fromstring(xmlData)
         
         acquisitionTime = parmsET.find('{http://nrg.wustl.edu/xnat}startTime').text
+        acquisitionDay = parmsET.find('{http://nrg.wustl.edu/xnat}sessionDay').text
         
         scanParms = parmsET.find('{http://nrg.wustl.edu/xnat}parameters')
         sampleSpacing = scanParms.find('{http://nrg.wustl.edu/xnat}readoutSampleSpacing').text
@@ -777,7 +778,7 @@ class getHCP(pyHCP):
         
         scanParms = { 'SampleSpacing': sampleSpacing, 'alShimCurrent': alShimCurrent, 'LinearOffset':  LinOffset, 'AcquisitionTime': acquisitionTime, 'VoxelResolution': voxelResolution, 'Orientation': orientation, \
                             'FOV': FOV, 'TR': TR, 'TE': TE, 'FlipAngle': flipAngle, 'ScanSequence': scanSequence, 'PixelBandwidth': pixelBandwidth, 'ReadoutDirection': readoutDirection, 'EchoSpacing': echoSpacing, \
-                            'PhaseEncodingDir': peDirection, 'ShimGroup': shimGroup, 'SEFieldmapGroup': seFieldMapGroup, 'DeltaTE': deltaTE, 'GEFieldMapGroup': GEFieldMapGroup }
+                            'PhaseEncodingDir': peDirection, 'ShimGroup': shimGroup, 'SEFieldmapGroup': seFieldMapGroup, 'DeltaTE': deltaTE, 'GEFieldMapGroup': GEFieldMapGroup, 'SessionDay': acquisitionDay }
         return scanParms
     #===============================================================================    
     def getScanMeta( self ):

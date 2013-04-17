@@ -529,35 +529,42 @@ for h in xrange(0, len(SubjectsList)):
             phaShimGroupList = list()
             magScanDiffList = list()
             phaScanDiffList = list()
+            magSessionDayList = list()
+            phaSessionDayList = list()
             
             currMagScanIdx = 0
             currPhaScanIdx = 0
             for j in xrange(0, magScanCount):
                 currMagScanId = idList[seriesList.index('SpinEchoFieldMap_LR', int(currMagScanIdx))]
                 currMagScanIdx = seriesList.index('SpinEchoFieldMap_LR', int(currMagScanIdx)) + 1
-                magScanIdList.append(currMagScanId)
                 getHCP.Scan = currMagScanId
-                magScanMeta = getHCP.getScanMeta()
                 magScanParms = getHCP.getScanParms()
-                magScanTimeList.append(magScanParms.get('AcquisitionTime'))
-                magShimGroupList.append(magScanParms.get('ShimGroup'))
                 
                 currPhaScanId = idList[seriesList.index('SpinEchoFieldMap_RL', int(currPhaScanIdx))]
                 currPhaScanIdx = seriesList.index('SpinEchoFieldMap_RL', int(currPhaScanIdx)) + 1
-                phaScanIdList.append(currPhaScanId)
                 getHCP.Scan = currPhaScanId
-                phaScanMeta = getHCP.getScanMeta()
                 phaScanParms = getHCP.getScanParms()
-                phaScanTimeList.append(magScanParms.get('AcquisitionTime'))
-                phaShimGroupList.append(magScanParms.get('ShimGroup'))
                 
-
-#                magScanTimeList.append(magScanAcqTime)
-                magScanDelta = datetime.datetime.strptime(FuncScanParms.get('AcquisitionTime'), '%H:%M:%S') - datetime.datetime.strptime(magScanParms.get('AcquisitionTime'), '%H:%M:%S')
-                magScanDiffList.append(magScanDelta.seconds)
                 
-                phaScanDelta = datetime.datetime.strptime(FuncScanParms.get('AcquisitionTime'), '%H:%M:%S') - datetime.datetime.strptime(phaScanParms.get('AcquisitionTime'), '%H:%M:%S')
-                phaScanDiffList.append(phaScanDelta.seconds)
+                if (functScanParms.get('SessionDay') == magScanParms.get('SessionDay')) and (functScanParms.get('SessionDay') == phaScanParms.get('SessionDay')):
+                    magScanIdList.append(currMagScanId)
+                    magScanTimeList.append(magScanParms.get('AcquisitionTime'))
+                    magShimGroupList.append(magScanParms.get('ShimGroup'))
+                    magSessionDayList.append(magScanParms.get('SessionDay'))
+                    
+    
+                    phaScanIdList.append(currPhaScanId)
+                    phaScanTimeList.append(phaScanParms.get('AcquisitionTime'))
+                    phaShimGroupList.append(phaScanParms.get('ShimGroup'))
+                    phaSessionDayList.append(phaScanParms.get('SessionDay'))
+                    
+    
+    #                magScanTimeList.append(magScanAcqTime)
+                    magScanDelta = datetime.datetime.strptime(FuncScanParms.get('AcquisitionTime'), '%H:%M:%S') - datetime.datetime.strptime(magScanParms.get('AcquisitionTime'), '%H:%M:%S')
+                    magScanDiffList.append(magScanDelta.seconds)
+                    
+                    phaScanDelta = datetime.datetime.strptime(FuncScanParms.get('AcquisitionTime'), '%H:%M:%S') - datetime.datetime.strptime(phaScanParms.get('AcquisitionTime'), '%H:%M:%S')
+                    phaScanDiffList.append(phaScanDelta.seconds)
         
             
             minMagIdx = magScanDiffList.index(min(magScanDiffList)) 
