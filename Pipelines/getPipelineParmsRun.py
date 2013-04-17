@@ -11,6 +11,7 @@ import numpy
 import socket
 import argparse
 import datetime
+import subprocess
 
 from pyHCP import pyHCP, getHCP, writeHCP
 
@@ -21,14 +22,13 @@ sTime = time.time()
 # PARSE INPUT
 #===============================================================================
 # Examples:
-# -User tony -Password passfoo -Server hcpx-demo.humanconnectome.org -Pipeline DiffusionHCP -Subject 100307 -Project ReleaseTest 
-# -User tony -Password passfoo -Pipeline FunctionalHCP -Server hcpx-dev-cuda00.nrg.mir -Subjects 100307 -Project HCP_Q1
-# -User tony -Password passfoo -Pipeline FunctionalHCP -Server https://hcpx-demo.humanconnectome.org -Subject 100307 -Project ReleaseTest
-# -User tony -Password passfoo -Server hcpi-dev-cuda00.nrg.mir -Pipeline StructuralHCP -Subject 100307 -Project HCP_Phase2
+# -User tony -Password ******* -Server db.humanconnectome.org -Project HCP_Q2 -Pipeline StructuralHCP -Subject 792564 -Compute NRG
+# -User tony -Password ******* -Server db.humanconnectome.org -Project HCP_Q2 -Pipeline FunctionalHCP -FunctSeries tfMRI_EMOTION_LR -Subject 792564 -Compute NRG
+# -User tony -Password ******* -Server http://10.28.17.201:8080  -Project HCP_Q1 -Pipeline StructuralHCP -Subject 100307 -Compute CHPC
 #===============================================================================
 parser = argparse.ArgumentParser(description="Script to generate proper command for XNAT functional pipeline lauching ...")
 
-#MANDATORY....
+# MANDATORY....
 parser.add_argument("-User", "--User", dest="User", default='tony', type=str)
 parser.add_argument("-Password", "--Password", dest="Password", default='none', type=str)
 parser.add_argument("-Pipeline", "--Pipeline", dest="Pipeline", default='fMRIVolume', type=str)
@@ -37,17 +37,15 @@ parser.add_argument("-Server", "--Server", dest="Server", default='http://hcpi-d
 parser.add_argument('--version', action='version', version='%(prog)s 2.0.0')
 # IF Pipeline == Functional...
 parser.add_argument("-FunctSeries", "--FunctSeries", dest="FunctSeries", default=None, type=str)
-#END MANDATORY....
+# END MANDATORY....
 parser.add_argument("-Project", "--Project", dest="Project", default='HCP_Phase2', type=str)
 parser.add_argument("-Shadow", "--Shadow", dest="Shadow", default=None, type=str)
 parser.add_argument("-Build", "--Build", dest="Build", default=None, type=str)
 parser.add_argument("-Compute", "--Compute", dest="Compute", default='NRG', type=str)
-
-parser.add_argument("-Production", "--Production", dest="iProduction", default=False, type=bool)
-
+# FOR SAFETY...
+parser.add_argument("-Launch", "--Launch", dest="Launch", default=False)
 
 args = parser.parse_args()
-
 #MANDATORY....
 User = args.User
 Password = args.Password
@@ -60,6 +58,7 @@ Project = args.Project
 Shadow = args.Shadow
 Build = args.Build
 Compute = args.Compute
+Launch = args.Launch
 
 if (Server.find('intra') != -1) or (Server.find('hcpi') != -1):
     dbStr = 'intradb'
@@ -69,12 +68,12 @@ if (Server.find('intra') != -1) or (Server.find('hcpi') != -1):
         
 elif (Server.find('hcpx') != -1) or (Server.find('db.humanconnectome') != -1):
     dbStr = 'hcpdb'
+else:
+    dbStr = 'hcpdb'
 
 #===============================================================================
 # STATIC PARMS...
 #===============================================================================
-JobSubmitter = '/data/%s/pipeline/bin/PipelineJobSubmitter ' % (dbStr)
-PipelineLauncher = '/data/%s/pipeline/bin/XnatPipelineLauncher ' % (dbStr)
 DataType = '-dataType xnat:mrSessionData '
 SupressNotify = '-supressNotification '
 NotifyUser = '-notify wilsont@mir.wustl.edu ' 
@@ -87,14 +86,23 @@ else:
     XnatServer = '-parameter xnatserver=ConnectomeDB '
 AdminEmail = '-parameter adminemail=db-admin@humanconnectome.org '
 UserEmail = '-parameter useremail=wilsont@mir.wustl.edu '
+
+
+JobSubmitter = '/data/%s/pipeline/bin/PipelineJobSubmitter ' % (dbStr)
+PipelineLauncher = '/data/%s/pipeline/bin/XnatPipelineLauncher ' % (dbStr)
+
 if (Compute == 'NRG'):
     TemplatesDir = '/nrgpackages/atlas/HCP/'
     ConfigDir = '/nrgpackages/tools/HCP/conf/'
     CaretAtlasDir = '/nrgpackages/atlas/HCP/standard_mesh_atlases/'
+    PipelineScripts = '/data/%s/pipeline/catalog/%s/resources/scripts/' % (dbStr, Pipeline)
 elif (Compute == 'CHPC'):
-    TempaltesDir = '/NRG/BlueArc/nrgpackages/atlas/HCP/'
+#    JobSubmitter = '/HCP/BlueArc/chpc/%s/pipeline/bin/PipelineJobSubmitter ' % (dbStr)
+#    PipelineLauncher = '/HCP/BlueArc/chpc/%s/pipeline/bin/XnatPipelineLauncher ' % (dbStr)
+    TemplatesDir = '/NRG/BlueArc/nrgpackages/atlas/HCP/'
     ConfigDir = '/NRG/BlueArc/nrgpackages/tools/HCP/conf/'
     CaretAtlasDir = '/NRG/BlueArc/nrgpackages/atlas/HCP/standard_mesh_atlases/'
+    PipelineScripts = '/HCP/BlueArc/chpc/%s/pipeline/catalog/%s/resources/scripts/' % (dbStr, Pipeline)
      
 #===============================================================================
 # HACK for REST RL/LR...
@@ -109,19 +117,7 @@ pyHCP = pyHCP(User, Password, Server)
 getHCP = getHCP(pyHCP)
 getHCP.Project = Project
 #===============================================================================
-# FUNCTIONS...
-#===============================================================================
-#def fGetAllIndices(inputVal, inputList):
-#    allIndicesList = list()
-#    currIdx = -1
-#    while True:
-#        try:
-#            currIdx = inputList.index(inputVal, currIdx + 1)
-#            allIndicesList.append(currIdx)
-#        except ValueError:
-#            break
-#    return numpy.asarray(allIndicesList, dtype=numpy.int)
-#===============================================================================
+
 
 SleepTime = 3
 SubjectsList = Subjects.split(',')
@@ -247,6 +243,7 @@ for h in xrange(0, len(SubjectsList)):
         launcherTemplatesDir = '-parameter templatesdir=%s ' % TemplatesDir
         launcherConfigDir = '-parameter configdir=%s ' % ConfigDir
         launcherCaretAtlasDir = '-parameter CaretAtlasDir=%s ' % CaretAtlasDir
+        launcherPipelineScripts = '-parameter pipelinescripts=%s ' % PipelineScripts
 
         
         if (len(FunctionalList) > 1):
@@ -255,16 +252,26 @@ for h in xrange(0, len(SubjectsList)):
             currBuildDir = BuildDirRoot + str(numpy.asarray(round(sTime), dtype=numpy.uint64))
         BuildDir = '-parameter builddir=%s ' % (currBuildDir)
 
-        
+        #=======================================================================
+        # Redirection stuff...taken out recently...
+        #=======================================================================
 #        if not os.path.exists(currBuildDir + os.sep + getHCP.Subject) and sys.platform != 'win32':
 #            os.makedirs(currBuildDir + os.sep + getHCP.Subject)
-            
-        RedirectionStr = ' > ' + currBuildDir.replace(' ', '') + os.sep + getHCP.Subject + os.sep + Pipeline + 'LaunchSTDOUT.txt'
+#        RedirectionStr = ' > ' + currBuildDir.replace(' ', '') + os.sep + getHCP.Subject + os.sep + Pipeline + 'LaunchSTDOUT.txt'
         
+        #=======================================================================
+        # Shadow server stuff...
+        # TODO: Figure out how CHPC shadows will be handled...
+        #=======================================================================
         if (socket.gethostname() == 'intradb.humanconnectome.org') and (Shadow != None):
-            Host = '-host https://intradb-shadow' + ShadowArray[h] + '.nrg.mir '
+            Host = '-host https://intradb-shadow%s.nrg.mir '  % ShadowArray[h]
+            
+        # TODO: Need to verify this shadow host...    
+        elif (socket.gethostname() == 'db.humanconnectome.org') and (Shadow != None):
+            Host = '-host https://db-shadow%s.nrg.mir ' % ShadowArray[h]
         else: 
-            Host = '-host https://%s ' % (socket.gethostname())
+#            Host = '-host https://%s ' % (socket.gethostname())
+            Host = '-host %s ' % (pyHCP.Server)
 
                 
             
@@ -329,16 +336,19 @@ for h in xrange(0, len(SubjectsList)):
             launcherRL_Dir2 = '-parameter RL_Dir2=%s ' % DiffusionDirDict['RL_Dir2']
             launcherRL_Dir3 = '-parameter RL_Dir3=%s ' % DiffusionDirDict['RL_Dir3']
             
+            # DONE: Add input to "pipelinescripts"
             SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherSession + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
-            launcherEchoSpacing + launcherPhaseEncodingDir + launcherSubject + BuildDir + launcherLR_Dir1 + launcherLR_Dir2 + launcherLR_Dir3 + launcherRL_Dir1 + launcherRL_Dir2 + launcherRL_Dir3 + \
-            DiffusionScanIdDict['RL_1ScanId'] + DiffusionScanIdDict['RL_2ScanId'] + DiffusionScanIdDict['RL_3ScanId'] + DiffusionScanIdDict['LR_1ScanId'] + DiffusionScanIdDict['LR_2ScanId'] + DiffusionScanIdDict['LR_3ScanId'] + RedirectionStr
+            launcherPipelineScripts + launcherEchoSpacing + launcherPhaseEncodingDir + launcherSubject + BuildDir + launcherLR_Dir1 + launcherLR_Dir2 + launcherLR_Dir3 + launcherRL_Dir1 + launcherRL_Dir2 + launcherRL_Dir3 + \
+            DiffusionScanIdDict['RL_1ScanId'] + DiffusionScanIdDict['RL_2ScanId'] + DiffusionScanIdDict['RL_3ScanId'] + DiffusionScanIdDict['LR_1ScanId'] + DiffusionScanIdDict['LR_2ScanId'] + DiffusionScanIdDict['LR_3ScanId'] 
             
             if sys.platform == 'win32':
-                print 'Index of EMPTY ' + str(SubmitStr.find('EMPTY'))
                 print SubmitStr
             else:
                 print SubmitStr
-                os.system(SubmitStr)
+                if Launch:
+#                    os.system(SubmitStr)
+                    subprocess.call(SubmitStr, shell=True)
+
                 
         #=======================================================================
         # StructuralHCP
@@ -451,7 +461,7 @@ for h in xrange(0, len(SubjectsList)):
             SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             BuildDir + launcherSession + launcherSubject + launcherMagScanId + launcherPhaScanId + launcherT1wScanId_1 + launcherT1wScanId_2 + \
             launcherT2wScanId_1 + launcherT2wScanId_2 + launcherT1wSeriesDesc_1 + launcherT1wSeriesDesc_2 + launcherT2wSeriesDesc_1 + launcherT2wSeriesDesc_2 + launcherTE + launcherT1wSampleSpacing + launcherT2wSampleSpacing + launcherT1wTemplate + \
-            launcherT1wTemplateBrain + launcherT2wTemplate + launcherT2wTemplateBrain + launcherTemplateMask + launcherFinalTemplateSpace + launcherTemplatesDir + launcherConfigDir + launcherCaretAtlasDir + RedirectionStr
+            launcherT1wTemplateBrain + launcherT2wTemplate + launcherT2wTemplateBrain + launcherTemplateMask + launcherFinalTemplateSpace + launcherTemplatesDir + launcherConfigDir + launcherCaretAtlasDir 
             
             # print scanParms.get('GEFieldMapGroup'), magScanParms.get('GEFieldMapGroup'), phaScanParms.get('GEFieldMapGroup')
             if (scanParms.get('GEFieldMapGroup') == magScanParms.get('GEFieldMapGroup') == phaScanParms.get('GEFieldMapGroup')):
@@ -472,7 +482,9 @@ for h in xrange(0, len(SubjectsList)):
                     
                     if all(PathMatch):
                         print SubmitStr
-                        #os.system(SubmitStr)
+                        if Launch:
+#                            os.system(SubmitStr)
+                            subprocess.call(SubmitStr, shell=True)
                     else:
                         print 'ERROR: file paths mismatch for subject %s, session %s, pipeline %s, on server %s.' % (getHCP.Subject, getHCP.Session, Pipeline, getHCP.Server)
             else:
@@ -577,7 +589,7 @@ for h in xrange(0, len(SubjectsList)):
             
             SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             BuildDir + launcherSession + launcherSubject + launcherMagScanId + launcherPhaScanId + launcherFuncScanId + launcherScoutScanId + \
-            launcherFunctSeries + launcherLR_Fieldmap + launcherRL_Fieldmap + launcherDwellTime + TE + launcherUnwarpDir + launcherDistortionCorrect + launcherTemplatesDir + launcherConfigDir + launcherCaretAtlasDir + RedirectionStr
+            launcherFunctSeries + launcherLR_Fieldmap + launcherRL_Fieldmap + launcherDwellTime + TE + launcherUnwarpDir + launcherDistortionCorrect + launcherTemplatesDir + launcherConfigDir + launcherCaretAtlasDir 
             
             if (magShimGroupList[minMagIdx] == phaShimGroupList[minPhaIdx] == functScanParms.get('ShimGroup')) and (functScanParms.get('SEFieldMapGroup') == magScanParms.get('SEFieldMapGroup') == phaScanParms.get('SEFieldMapGroup')):
                 print 'ShimGroup and SEFieldMapGroup match successful...'
@@ -585,7 +597,10 @@ for h in xrange(0, len(SubjectsList)):
                     print SubmitStr
                 else:
                     print SubmitStr
-                    os.system(SubmitStr)
+                    if Launch:
+#                        os.system(SubmitStr)
+                        subprocess.call(SubmitStr, shell=True)
+                        
             else:
                 print 'WARNING: ShimGroup or SEFieldMapGroup mismatch for subject %s, session %s, series %s, on server %s.' % (getHCP.Subject, getHCP.Session, currSeries, getHCP.Server)
                 
@@ -599,26 +614,16 @@ for h in xrange(0, len(SubjectsList)):
             launcherBP = '-parameter BP=%s ' % (str(2000))
             launcherFunctSeries = '-parameter functseries=%s ' % (currSeries)
             
-            #===================================================================
-            # -label 100307_fnca 
-            # -host https://hcpi-dev-cuda00.nrg.mir
-            # -parameter xnatserver=ConnectomeDB 
-            # -parameter xnat_id=HCPIntradb_E04466
-            # -parameter project=HCP_Phase2
-            # -parameter sessionid=100307_fnca 
-            # -parameter subjects=100307 
-            # -parameter BP=2000 
-            # -parameter functionalseries=BOLD_REST1_RL
-            # -parameter builddir=/data/hcpdb/build/HCP_Phase2/1362341272 
-            #===================================================================
             SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +\
-            SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName + launcherSubject + launcherSession + BuildDir + launcherBP + launcherFunctSeries + RedirectionStr
+            SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName + launcherSubject + launcherSession + BuildDir + launcherBP + launcherFunctSeries 
             
             if sys.platform == 'win32':
                 print SubmitStr
             else:
                 print SubmitStr
-                os.system(SubmitStr)
+                if Launch:
+#                    os.system(SubmitStr)
+                    subprocess.call(SubmitStr, shell=True)
 
         
             

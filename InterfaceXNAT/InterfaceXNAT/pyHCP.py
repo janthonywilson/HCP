@@ -11,7 +11,6 @@ import errno
 import subprocess
 # Web stuff...
 import socket
-import base64
 import urllib
 import urllib2
 #import requests
@@ -94,13 +93,6 @@ class getHCP(pyHCP):
     def getSessionId( self ):
         """Get session id for getHCP session spawn"""
         URL = self.Server + 'data/JSESSION'
-
-        #=======================================================================
-        # # httplib2
-        # h = httplib2.Http(".cache")
-        # h.add_credentials(self.User, self.Password)
-        # r, content = h.request(URL, "GET")
-        #=======================================================================
 
         # URLLIB2
         Request = urllib2.Request(URL)
@@ -683,17 +675,7 @@ class getHCP(pyHCP):
             currID = AssessorIDs[i]
             
             restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/assessors/' + currID + '/files?format=csv'
-#            restURL = Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/assessors/' + currID + '/files?format=csv'
             restResults = self.getURLString(restURL)
-            
-            #===================================================================
-            # restResultsET = ET.fromstring(restResults)
-            # for assessorOutput in restResultsET.findall('{http://nrg.wustl.edu/xnat}out'):
-            #        for assessorFile in assessorOutput.findall('{http://nrg.wustl.edu/xnat}file'):
-            #            tmpURL = self.Server + assessorFile.attrib.get('URI')
-            #            tmpResults = self.getURLString(tmpURL)
-            #            AssessorOutputFileURI.append(os.path.normpath(assessorFile.attrib.get('URI')))
-            #===================================================================
             
             restResultsSplit = restResults.split('\n')
             restEndCount = restResults.count('\n')
@@ -938,8 +920,13 @@ class writeHCP(getHCP):
             else:
                 currFileName = FileNameList[i]
                 
+            # if currURI has preceeding slash, get rid of it because Server ends in slash by cleanup after init...
+            if (currURI[0] == '/'):
+                currURI = currURI[1:]
+                
             fileURL = self.Server + currURI
             fileInfo = self.getFileInfo(fileURL)
+            
             try:
                 fileSize = os.path.getsize(newDestinationDir + currFileName)
             except:

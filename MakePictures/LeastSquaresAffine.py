@@ -34,8 +34,8 @@ parser.add_argument("-D", "--ImageFileDir", dest="niftiFileDir", default=os.getc
 parser.add_argument("-N", "--ImageFile", dest="niftiFile", default=os.getcwd(), type=str, help="specify nifti directory...")
 parser.add_argument("-O", "--OutputDir", dest="outputDir", type=str, help="specify where to write the output files...")
 parser.add_argument("-B", "--BetDir", dest="betDir", type=str, help="specify where to write the output files...")
-parser.add_argument("-MXR", "--maxRange", dest="MaxRange", type=float, default=-1, help="specify max range...")
-parser.add_argument("-MNR", "--minRange", dest="MinRange", type=float, default=-1, help="specify min range...")
+parser.add_argument("-MXR", "--maxRange", dest="MaxRange", type=float, default=-1., help="specify max range...")
+parser.add_argument("-MNR", "--minRange", dest="MinRange", type=float, default=-1., help="specify min range...")
 
 InputArgs = parser.parse_args()
 niftiFileDir = InputArgs.niftiFileDir
@@ -57,6 +57,7 @@ if (betDir[-1] != os.sep):
     betDir += os.sep
     
 Vis = False
+Write = False
 #===============================================================================
 # functions...
 #===============================================================================
@@ -100,18 +101,20 @@ print "Input size: " + str(numpyBabelDataSz) + ' Max: ' + str(numpy.max(nimBabel
 nibMNI = nib.load(niftiDir + 'MNI152_T1_0.7mm.nii.gz')
 nibMNIBrain = nib.load(niftiDir + 'MNI152_T1_0.7mm_brain.nii.gz')
 nibMNIBrainMask = nib.load(niftiDir + 'MNI152_T1_0.7mm_brain_mask.nii.gz')
+nibMNIData = nibMNI.get_data()
 
 nibNMIBrainMaskIdx = numpy.nonzero( nibMNIBrainMask.get_data() > 0 )
 nibNMIBrainMaskSize = numpy.asarray(nibNMIBrainMaskIdx).shape
 standardCentroid = numpy.sum(numpy.asarray(nibNMIBrainMaskIdx, dtype=numpy.float32), axis=1) / nibNMIBrainMaskIdx[0].shape
 standardXYZ = numpy.subtract(numpy.asarray(nibNMIBrainMaskIdx, dtype=numpy.float32), standardCentroid.reshape(3,1))
+print "Standard size: " + str(numpy.asarray(nibMNIData.shape)) + ' Max: ' + str(numpy.max(nibMNIData.ravel())) + ' Min: ' + str(numpy.min(nibMNIData.ravel()))
 #===============================================================================
 # Do BET, save mask to nifti...
 #===============================================================================
 img = nib.AnalyzeImage( nimBabelData, nimBabelAffine )
 img.to_filename(niftiDir + niftiFileBaseName)
 
-if not os.path.exists(niftiDir + niftiFileBaseName + '.hdr'):
+if not os.path.exists(niftiDir + niftiFileBaseName + '_mask.hdr'):
     commandBET = '%sbet.exe %s%s %s%s -m -s -n' % (betDir, niftiDir, niftiFileBaseName, niftiDir, niftiFileBaseName)
     with open(os.devnull, "w") as fnull:
         subprocBET = subprocess.call( commandBET, stdout = fnull, stderr = fnull )
@@ -127,6 +130,8 @@ inputBrainMaskIdx = numpy.nonzero( analMaskData > 0 )
 inputBrainMaskSize = numpy.asarray(inputBrainMaskIdx).shape
 inputBrainMaskCentroid = numpy.sum(numpy.asarray(inputBrainMaskIdx, dtype=numpy.float32), axis=1) / inputBrainMaskIdx[0].shape
 inputXYZ = numpy.subtract(numpy.asarray(inputBrainMaskIdx, dtype=numpy.float32), inputBrainMaskCentroid.reshape(3,1))
+
+#print numpy.max(nibNMIBrainMaskIdx, axis = 1), numpy.max(inputBrainMaskIdx, axis = 1)
 #===============================================================================
 # Do convex hull and scale input to standard volume...
 #===============================================================================
@@ -186,7 +191,7 @@ if Vis:
         ax.plot3D(standardHull.points[simplexLooped,0], standardHull.points[simplexLooped,1], standardHull.points[simplexLooped,2], 'c-')
     plt.show() 
 #===============================================================================
-# Do some matching on voxel locations and inensities...
+# Do some matching on voxel locations...
 #===============================================================================
 inputRoundXYZ = numpy.asarray(numpy.round(inputScaleXYZ, decimals=0), dtype=numpy.int16)
 standardRoundXYZ = numpy.asarray(numpy.round(standardXYZ, decimals=0), dtype=numpy.int16)
@@ -211,7 +216,27 @@ dInputStandard = spatial.distance.cdist(inputScaleHullData, standardHullData, 'e
 
 distanceCrit = math.sqrt(2)
 matchIdx = numpy.nonzero(dInputStandard < distanceCrit) 
+if Vis:
+    print 'foo...'
+    #fig = plt.figure()
+    #ax = fig.add_subplot(131)
+    #im = ax.imshow(dInputStandard)
+    #fig.colorbar(im)
+    #
+    #ax = fig.add_subplot(132)
+    #im = ax.imshow(spatial.distance.squareform(dInput))
+    #fig.colorbar(im)
+    #
+    #ax = fig.add_subplot(133)
+    #im = ax.imshow(spatial.distance.squareform(dStandard))
+    #fig.colorbar(im)
+    #plt.show()
+#===============================================================================
+# Covariance matrix...[V,S,W] = svd(C), d = sign(det(W * V.T)) 
+#===============================================================================
 covInputStandard = numpy.asmatrix(inputScaleHullData[matchIdx[0],:], dtype=numpy.float32).T * numpy.asmatrix(standardHullData[matchIdx[1],:], dtype=numpy.float32)
+
+
 
 U, S, V = numpy.linalg.svd(covInputStandard)
 d = numpy.sign(numpy.linalg.det(V * U.T)) 
@@ -219,32 +244,93 @@ EyeMat = numpy.eye(3)
 EyeMat[2,2] = d
 At = V * EyeMat * U.T
 
-print numpy.linalg.inv(At)
-#rotXYZ = numpy.asarray(numpy.transpose(inputXYZ.T * numpy.linalg.inv(At)), dtype=numpy.float32)
+transMat = [[1, 0, 0, -inputBrainMaskCentroid[0]], [0, 1, 0, -inputBrainMaskCentroid[1]], [0, 0, 1, -inputBrainMaskCentroid[2]], [0, 0, 0, 1]]
+
+lsRot = numpy.linalg.lstsq(inputScaleHullData[matchIdx[0],:], standardHullData[matchIdx[1],:])
+#lsRot = numpy.linalg.solve(inputScaleHullData[matchIdx[0],:].T, standardHullData[matchIdx[1],:])
+lsMat = numpy.identity(4, dtype=numpy.float32)
+lsMat[:3, :3] = lsRot[0]
+
+eyeMat = numpy.identity(4, dtype=numpy.float32)
+rotMat = numpy.linalg.inv(At)
+eyeMat[:3, :3] = rotMat
+rotMat = eyeMat
+
+eyeScale = numpy.identity(4, dtype=numpy.float32)
+eyeScale[:3, :3] = scaleMat
+scaleMat = eyeScale
+
+scaleTransMat = numpy.dot(scaleMat, transMat)
+#M = (numpy.dot(scaleTransMat, rotMat))
+M = (numpy.dot(scaleTransMat, lsMat))
+invM = numpy.linalg.inv(M)
+
+numpy.set_printoptions(precision=3, suppress=True)
+print covInputStandard
+print scaleTransMat
+print lsRot[0]
+print rotMat
+print M
+#print invM
+#print numpy.linalg.inv(M)
 
 
+#nimBabelData, 256 x 320 x 320
+inputXYZIdx = (numpy.nonzero( nimBabelData > -1 ))
+onesArray = numpy.ones(inputXYZIdx[0].shape)
+tmpX = inputXYZIdx[0]
+tmpY = inputXYZIdx[1]
+tmpZ = inputXYZIdx[2]
+inputXYZIdx = numpy.array([tmpX, tmpY, tmpZ, onesArray])
+
+newXYZ = numpy.dot(inputXYZIdx.T, M)
+newRoundXYZ = numpy.asarray(numpy.round(newXYZ, decimals=0), dtype=numpy.int16)
 
 
+newRoundXYZ[numpy.nonzero(newRoundXYZ[:,0] > nimBabelData.shape[0]-1), 0] = nimBabelData.shape[0]-1
+newRoundXYZ[numpy.nonzero(newRoundXYZ[:,1] > nimBabelData.shape[1]-1), 1] = nimBabelData.shape[1]-1
+newRoundXYZ[numpy.nonzero(newRoundXYZ[:,2] > nimBabelData.shape[2]-1), 2] = nimBabelData.shape[2]-1
+
+newRoundXYZ[numpy.nonzero(newRoundXYZ[:,0] < 0), 0] = 0
+newRoundXYZ[numpy.nonzero(newRoundXYZ[:,1] < 0), 1] = 0
+newRoundXYZ[numpy.nonzero(newRoundXYZ[:,2] < 0), 2] = 0
+
+nimBabelDataVec = nimBabelData.ravel()
+newInputData = numpy.zeros(nimBabelData.shape, dtype=numpy.int16)
+newInputData[newRoundXYZ[:,0], newRoundXYZ[:,1], newRoundXYZ[:,2]] = nimBabelDataVec
+           
+#print nimBabel.get_header()
+maskSignalImg = nib.Nifti1Image(newInputData, numpy.eye(4))
+nib.save(maskSignalImg, niftiDir + niftiFileBaseName + '_Final.nii.gz')
+
+    
+#fig = plt.figure()          
+#hist, bins = numpy.histogram(numpy.nonzero(newInputData.ravel()), bins = 100)
+#plt.bar(bins, numpy.append(hist, [0]), align = 'edge', width = 0.8)
+#plt.show()
+
+if Write:
+    with open(outputDir +os.sep+ 'OutputData.txt', 'wb') as outputFileObj:
+        for i in xrange(0, len(nimBabelDataVec)):
+            writeStr = '%d\t%d\t%d\t%d\n' % (newRoundXYZ[i,0], newRoundXYZ[i,1], newRoundXYZ[i,2], nimBabelDataVec[i])
+            outputFileObj.write(writeStr)
+    #        outputFileObj.writelines('\t'.join(i) + '\n' for i in newInputData)
+    #        writeCode = outputFileObj.write(newInputData)
+    
+#print newInputData[:,:,0] 
 #fig = plt.figure()
 #ax = fig.add_subplot(131)
-#im = ax.imshow(dInputStandard)
+#im = ax.imshow(newInputData[:,:,0])
 #fig.colorbar(im)
 #
 #ax = fig.add_subplot(132)
-#im = ax.imshow(spatial.distance.squareform(dInput))
+#im = ax.imshow(newInputData[:,:,200])
 #fig.colorbar(im)
 #
 #ax = fig.add_subplot(133)
-#im = ax.imshow(spatial.distance.squareform(dStandard))
+#im = ax.imshow(newInputData[:,:,280])
 #fig.colorbar(im)
 #plt.show()
-
-plt.plot(numpy.min(dInputStandard, axis=1), 'r.-')
-plt.plot(numpy.min(dInputStandard, axis=0), 'bo-')
-plt.show()
-
-
-covInputStandard = numpy.asmatrix(inputScaleHullData, dtype=numpy.float32).T * numpy.asmatrix(standardHullData, dtype=numpy.float32)
 
 #matchList = list()
 #nLoop = int(numpy.round(inputXYZ.shape[1] * 0.0001))
@@ -284,78 +370,15 @@ covInputStandard = numpy.asmatrix(inputScaleHullData, dtype=numpy.float32).T * n
 #        plt.plot(numpy.arange(0,len(dXYZVoxelSum)), dXYZVoxelSum, 'ko')
 #        plt.show()
 
-#===============================================================================
-# Covariance matrix...[V,S,W] = svd(C), d = sign(det(W * V.T)) 
-#===============================================================================
-#inputXYZ = numpy.random.randn(3,32)
-#standardXYZ = numpy.random.randn(3,32)
-#covMat = numpy.asmatrix(inputXYZ, dtype=numpy.float32) * numpy.asmatrix(standardXYZ, dtype=numpy.float32).T
-#match input INTO standard...
-inputXYMatchIdx = dXYZVoxelSum[0]
-standardXYZMatchIdx = dXYZVoxelSum[1]
-
-covMat = numpy.asmatrix(inputXYZ[:,usableSubsampleVec], dtype=numpy.float32) * numpy.asmatrix(standardXYZ[:,usableSubsampleVec], dtype=numpy.float32).T
-U, S, V = numpy.linalg.svd(covMat)
-
-d = numpy.sign(numpy.linalg.det(V * U.T)) 
-
-EyeMat = numpy.eye(3)
-EyeMat[2,2] = d
-At = V * EyeMat * U.T
-
-
-rotXYZ = numpy.asarray(numpy.transpose(inputXYZ.T * numpy.linalg.inv(At)), dtype=numpy.float32)
-#Dist = sqrt( sum( (XYZoneMatch(:) - XYZrot(:)) .^ 2) )
-
-if Vis:
-    fig = plt.figure()
-    ax = Axes3D(fig)
-    ax.scatter(rotXYZ[0,usableSubsampleVec], rotXYZ[1,usableSubsampleVec], rotXYZ[2,usableSubsampleVec], s=10, c='k', marker='o')
-    ax.scatter(inputXYZ[0,usableSubsampleVec], inputXYZ[1,usableSubsampleVec], inputXYZ[2,usableSubsampleVec], s=20, c='r', marker='o')
-    ax.scatter(standardXYZ[0,usableSubsampleVec], standardXYZ[1,usableSubsampleVec], standardXYZ[2,usableSubsampleVec], s=20, c='b', marker='o')
-    plt.show()
-
-
-#===============================================================================
-# rotate...could also try scipy.ndarray.rotate
-#===============================================================================
-#Theta = numpy.deg2rad(90)
-#Rx = [[1, 0, 0, 0], [0, cos(Theta), -sin(Theta), 0], [0, sin(Theta), cos(Theta), 0], [0, 0, 0, 1]]
-#Ry = [[cos(Theta), 0, sin(Theta), 0], [0, 1, 0, 0], [-sin(Theta), 0, cos(Theta), 0], [0, 0, 0, 1]]
-#Rz = [[cos(Theta), -sin(Theta), 0, 0], [sin(Theta), cos(Theta), 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-
-R = [[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-T = [[1, 0, 0, -numpyBabelDataSz[0]/2], [0, 1, 0, -numpyBabelDataSz[1]/2], [0, 0, 1, -numpyBabelDataSz[2]/2], [0, 0, 0, 1]]
-M = numpy.dot(R, T)
-# need to update this with new code...
-invM = numpy.linalg.inv(M)
-
-            
-# Speed up of 5.3997x versus for looping...
-ndMesh = numpy.asarray(numpy.mgrid[0:numpyBabelDataSz[0], 0:numpyBabelDataSz[1], 0:numpyBabelDataSz[2]])
-Is = numpy.ravel(ndMesh[0, :])
-Js = numpy.ravel(ndMesh[1, :])
-Ks = numpy.ravel(ndMesh[2, :])
-
-IJKs = numpy.vstack((Is, Js))
-IJKs = numpy.vstack((IJKs, Ks))
-IJKs = numpy.vstack((IJKs, numpy.ones((numpyBabelDataSz[0] * numpyBabelDataSz[1] * numpyBabelDataSz[2]), dtype=numpy.int32)))
-
-dataVec = numpy.ravel(nimBabelVol)
-xyzR = numpy.dot(M, IJKs)
-xyzMin = numpy.min(xyzR, 1)
-invT = [[1, 0, 0, -(xyzMin[0])], [0, 1, 0, -(xyzMin[1])], [0, 0, 1, -(xyzMin[2])], [0, 0, 0, 1]]
-ijkT = numpy.dot(invT, xyzR)
-#dataVecT = numpy.dot(invT, numpy.dot(M, IJKs))
 
 #===============================================================================
 # fill new volume with rotated data....
 #===============================================================================
-newSize = numpy.max(ijkT, axis=1)+1
-nimBabelVol = numpy.zeros((newSize[0], newSize[1], newSize[2]), dtype=numpy.int32)
-numpyBabelDataSz = numpy.asarray(nimBabelData.shape)
-# Speed up of 6.1526x v for loop...
-nimBabelVol[ijkT[0,:], ijkT[1,:], ijkT[2,:]] = dataVec 
+#newSize = numpy.max(ijkT, axis=1)+1
+#nimBabelVol = numpy.zeros((newSize[0], newSize[1], newSize[2]), dtype=numpy.int32)
+#numpyBabelDataSz = numpy.asarray(nimBabelData.shape)
+## Speed up of 6.1526x v for loop...
+#nimBabelVol[ijkT[0,:], ijkT[1,:], ijkT[2,:]] = dataVec 
 
 print("Duration: %s" % (time.time() - sTime))
             
