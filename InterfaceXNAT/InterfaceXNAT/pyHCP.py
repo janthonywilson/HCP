@@ -17,6 +17,7 @@ import urllib2
 #import httplib2
 from ssl import SSLError
 import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import QName
 from urllib2 import URLError, HTTPError
 
 #===============================================================================
@@ -56,7 +57,7 @@ class getHCP(pyHCP):
         
         self.Verbose = False
         self.Timeout = 8
-        self.TimeoutMax = 256
+        self.TimeoutMax = 1024
         self.TimeoutStep = 8
         
         self.Project = ''
@@ -116,7 +117,10 @@ class getHCP(pyHCP):
                         print 'URLError message: ' +str(e.msg)+ '. getSessionId Failed with wrong password.'
                         sys.exit(401)
                 except:
-                    print 'URL: %s failed with code: %s ' % (URL, e.code)
+                    try:
+                        print 'URL: %s failed with code: %s ' % (URL, e.code)
+                    except:
+                        print 'URL: %s failed with reason: %s ' % (URL, e.reason)
                     sys.exit()
             except SSLError, e:
                 self.Timeout += self.TimeoutStep
@@ -197,7 +201,8 @@ class getHCP(pyHCP):
             self.ProjectNames.append(currProjectName)
             self.ProjectsSecondary.append(currProjectSecondary)
             
-        return self.Projects, self.ProjectNames, self.ProjectsSecondary
+        Projects = {'Projects':self.Projects, 'Names':self.ProjectNames, 'SecondaryName':self.ProjectsSecondary}
+        return Projects
     #===============================================================================
     def getSubjects( self ):
         """Get all subjects for a given project"""
@@ -406,6 +411,45 @@ class getHCP(pyHCP):
                 
         return Quality, ScanIds, Series, Sessions, ScanType
     #===============================================================================
+    def getSubjectResources(self):
+        """Get subject resources"""
+        
+        ResourceID = list()
+        ResourceName = list()
+        ResourceCategory = list()
+        
+        # restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/resources?format=csv&file_stats=true'
+        restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '/resources?format=csv'
+        if self.Verbose: print restURL
+        
+        restResults = self.getURLString(restURL)
+        
+        if ('404' in restResults):
+            return restResults
+            
+        restResultsSplit = restResults.split('\n')
+        restEndCount = restResults.count('\n')
+    
+        restSessionHeader = restResultsSplit[0].replace('"', '')
+        restSessionHeaderSplit = restSessionHeader.split(',')
+        
+        xnatAbstractresourceIdIdx = restSessionHeaderSplit.index('xnat_abstractresource_id')
+        labelIdx = restSessionHeaderSplit.index('label')
+        elementNameIdx = restSessionHeaderSplit.index('element_name')
+        categoryIdx = restSessionHeaderSplit.index('element_name')
+        categoryIdIdx = restSessionHeaderSplit.index('cat_id')
+        
+        for i in xrange(1,restEndCount):
+            currRow = restResultsSplit[i].replace('"', '')
+            currRowSplit = currRow.split(',')
+    
+            ResourceID.append(currRowSplit[xnatAbstractresourceIdIdx])
+            ResourceName.append(currRowSplit[labelIdx])
+            ResourceCategory.append(currRowSplit[categoryIdx])
+        
+        SubjectResources = {'IDs':ResourceID, 'Names':ResourceName, 'Category':ResourceCategory }
+        return SubjectResources
+    #===============================================================================
     def getSubjectResourcesMeta(self):
         """Get file info about ALL resources for a subject"""
         
@@ -586,6 +630,12 @@ class getHCP(pyHCP):
     def getFileInfo( self, URL ):
         """Get mod-date, size, and URL for a file on the server"""
 
+        if (URL.find('http') == -1):
+            if (URL[0] == '/'):
+                URL = self.Server + URL[1:-1]
+            else:
+                URL = self.Server + URL
+            
         restRequest = urllib2.Request(URL)
         restRequest.add_header("Cookie", "JSESSIONID=" + self.SessionId);
          
@@ -713,7 +763,7 @@ class getHCP(pyHCP):
 
         restURL = self.Server + 'data/projects/' +self.Project+ '/subjects/' +self.Subject+ '/experiments/' +self.Session+ '/scans/' +self.Scan
         xmlData = self.getURLString( restURL )
-        parmsET = ET.fromstring(xmlData)
+        parmsET = ET.fromstring( xmlData )
         
         acquisitionTime = parmsET.find('{http://nrg.wustl.edu/xnat}startTime').text
         acquisitionDay = parmsET.find('{http://nrg.wustl.edu/xnat}sessionDay').text
@@ -766,6 +816,10 @@ class getHCP(pyHCP):
         except:
             GEFieldMapGroup = 'NA'
         
+        try:
+            biasGroup = scanParms.find('{http://nrg.wustl.edu/xnat}biasGroup').text
+        except:
+            biasGroup = 'NA'
         
         for addParms in scanParms.findall('{http://nrg.wustl.edu/xnat}addParam'):
             addParmsAttrib = addParms.attrib
@@ -778,7 +832,8 @@ class getHCP(pyHCP):
         
         scanParms = { 'SampleSpacing': sampleSpacing, 'alShimCurrent': alShimCurrent, 'LinearOffset':  LinOffset, 'AcquisitionTime': acquisitionTime, 'VoxelResolution': voxelResolution, 'Orientation': orientation, \
                             'FOV': FOV, 'TR': TR, 'TE': TE, 'FlipAngle': flipAngle, 'ScanSequence': scanSequence, 'PixelBandwidth': pixelBandwidth, 'ReadoutDirection': readoutDirection, 'EchoSpacing': echoSpacing, \
-                            'PhaseEncodingDir': peDirection, 'ShimGroup': shimGroup, 'SEFieldmapGroup': seFieldMapGroup, 'DeltaTE': deltaTE, 'GEFieldMapGroup': GEFieldMapGroup, 'SessionDay': acquisitionDay }
+                            'PhaseEncodingDir': peDirection, 'ShimGroup': shimGroup, 'SEFieldmapGroup': seFieldMapGroup, 'DeltaTE': deltaTE, 'GEFieldMapGroup': GEFieldMapGroup, 'SessionDay': acquisitionDay, \
+                            'BiasGroup': biasGroup }
         return scanParms
     #===============================================================================    
     def getScanMeta( self ):
@@ -854,7 +909,151 @@ class getHCP(pyHCP):
             
         ScanMeta = {'Name': Names, 'Bytes': Sizes, 'URI': URIs, 'Path': FilePath, 'Readable': FileReadable, 'Collections': Collections, 'Format': FileFormats, 'Content': FileContents }
         return ScanMeta
+    #===============================================================================    
+    def getSubjectMeta( self ):
+        """Get Subject Metadata"""
+        
+        TagList = list()
+        ValueList = list()
+        self.Session = '%s_%s' % (self.Subject, 'SubjMeta')
+        
+        if (not self.Session):
+            print 'Session not defined...'
+        else:
+            restURL = self.Server + 'data/projects/' + self.Project + '/subjects/' + self.Subject + '/experiments/' + self.Session + '?format=xml'
 
+            xmlData = self.getURLString( restURL )
+            parmsET = ET.fromstring( xmlData )
+            
+            namespace = 'http://nrg.wustl.edu/hcp'
+            completenessNode = parmsET.find(str(QName( namespace, 'completeness' )))
+            imagingNode = completenessNode.find(str(QName( namespace, 'imaging' )))
+            
+            for children in imagingNode:
+                childTag = children.tag
+                childText = children.text
+                childTagSplit = childTag.split('}')
+                
+                #===============================================================
+                # if (childText == '0'): childText = False
+                # elif (childText == '1'): childText = True
+                #===============================================================
+                
+                TagList.append(childTagSplit[-1])
+                ValueList.append(childText)
+                
+            SubjectMeta = dict(zip(TagList, ValueList))
+            return SubjectMeta
+    #===============================================================================
+    # WORKFLOW
+    #===============================================================================  
+    def getParsedWorkflow( self ):
+        """Get Workflow Data and Parse"""
+    
+        # https://db.humanconnectome.org/data/services/workflows/FunctionalHCP?columns=functionalseries,builddir&format=csv&latest_by_param=functionalseries
+        # "label","label","id","externalid","pipeline_name","launch_time","jobid","status","current_step_launch_time","current_step_id","builddir"
+        Subject = list()
+#        Session = list()
+        ID = list()
+#        ExternalID = list()
+        PipelinePathName = list()
+        LaunchTime = list()
+        JobID = list()
+        JobStatus = list()
+        StepLaunchTime = list()
+        StepID = list()
+        BuildDir = list()
+        FunctionalSeries = list()
+
+
+        if (self.Pipeline == 'FunctionalHCP'):
+            restURL = self.Server + 'data/services/workflows/' + self.Pipeline + '?columns=functionalseries,builddir&format=csv&latest_by_param=functionalseries'
+        else:
+            restURL = self.Server + 'data/services/workflows/' + self.Pipeline + '?display=LATEST&columns=builddir&format=csv'
+            
+        restData = self.getURLString( restURL )
+    
+        
+        restResultsSplit = restData.split('\n')
+        restEndCount = restData.count('\n')
+        restSessionHeader = restResultsSplit[0].replace('"', '')
+        restSessionHeaderSplit = restSessionHeader.split(',')
+        
+        labelIdx = restSessionHeaderSplit.index('label')
+        idIdx = restSessionHeaderSplit.index('id')
+        pipelineIdx = restSessionHeaderSplit.index('pipeline_name')
+        launchTimeIdx = restSessionHeaderSplit.index('launch_time')
+        jobIdx = restSessionHeaderSplit.index('jobid')
+        statusIdx = restSessionHeaderSplit.index('status')
+        stepLaunchIdx = restSessionHeaderSplit.index('current_step_launch_time')
+        stepIdx = restSessionHeaderSplit.index('current_step_id')
+        if (self.Pipeline == 'FunctionalHCP'):
+            functionalSeriesIdx = restSessionHeaderSplit.index('functionalseries')
+        buildDirIdx = restSessionHeaderSplit.index('builddir')
+        
+        for j in xrange(1, restEndCount):
+            currRow = restResultsSplit[j]
+            
+            currRowSplit = currRow.split(',')
+    
+            Subject.append(currRowSplit[labelIdx].replace('"', ''))
+            ID.append(currRowSplit[idIdx].replace('"', ''))
+            PipelinePathName.append(currRowSplit[pipelineIdx].replace('"', ''))
+            LaunchTime.append(currRowSplit[launchTimeIdx].replace('"', ''))
+            JobID.append(currRowSplit[jobIdx].replace('"', ''))
+            JobStatus.append(currRowSplit[statusIdx].replace('"', ''))
+            StepLaunchTime.append(currRowSplit[stepLaunchIdx].replace('"', ''))
+            StepID.append(currRowSplit[stepIdx].replace('"', ''))
+            if (self.Pipeline == 'FunctionalHCP'):
+                FunctionalSeries.append(currRowSplit[functionalSeriesIdx].replace('"', ''))
+            BuildDir.append(currRowSplit[buildDirIdx].replace('"', ''))
+            
+        # a short, ugly, sorting subroutine...surely there is something better...
+        s = Subject
+        sortIdx = map(int, sorted(range(len(s)), key=lambda k: s[k]))
+        
+        Subject = [Subject[i] for i in sortIdx]
+        PipelinePathName = [PipelinePathName[i] for i in sortIdx]
+        LaunchTime = [LaunchTime[i] for i in sortIdx]
+        JobID = [JobID[i] for i in sortIdx]
+        JobStatus = [JobStatus[i] for i in sortIdx]
+        StepLaunchTime = [StepLaunchTime[i] for i in sortIdx]
+        StepID = [StepID[i] for i in sortIdx]
+        BuildDir = [BuildDir[i] for i in sortIdx]
+        FunctionalSeries = [FunctionalSeries[i] for i in sortIdx]
+
+        
+        ParsedData = {'Subject': Subject, 'ID': ID, 'PipelinePathName': PipelinePathName, 'LaunchTime': LaunchTime, 'JobID': JobID, 'JobStatus': JobStatus, 'StepLaunchTime': StepLaunchTime, 'StepID': StepID, 'BuildDir': BuildDir, 'FunctionalSeries': FunctionalSeries}
+        return ParsedData
+#===============================================================================    
+#===============================================================================
+# def fPrint( outputDirFile, headerStr, *args ):
+# 
+#    outputFile = os.path.basename(outputDirFile)
+#    ouputFileBase, outputFileExt = os.path.splitext(outputFile)
+#    outputDir = os.path.dirname(os.path.normpath(outputDirFile)) + os.sep
+# 
+#    if not os.path.exists(outputDir):
+#        os.makedirs(outputDir)
+#        
+#    fileID = open(outputDirFile, 'wb')
+#        
+#    for i in xrange(0, len(headerStr)):
+#        if (i < len(headerStr)-1):
+#            fileID.write(headerStr[i]+'\t')
+#        else:
+#            fileID.write(headerStr[i]+'\n')
+#            
+#    for i in xrange(0, len(args[0])):
+#        for j in xrange(0, len(args)):
+#            
+#            if (j < len(args)-1):
+#                fileID.write('%s' % args[j][i] + "\t")
+#            else:
+#                fileID.write('%s' % args[j][i] + "\n")
+#===============================================================================
+#===============================================================================
+        
 #===============================================================================
 # WRITE
 #===============================================================================

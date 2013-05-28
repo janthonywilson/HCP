@@ -20,7 +20,7 @@ sTime = time.time()
 #===============================================================================
 # TO DO:
 #===============================================================================
-# -Scan should accept a list...
+# 
 #===============================================================================
 
 
@@ -211,24 +211,29 @@ else:
     for i in xrange(0, len(ScanList)):
         getHCP.Scan = ScanList[i]
         ScanMeta = getHCP.getScanMeta()
-        CollectionsIdx = ScanMeta.get('Format').index(FileType)
-        FilePathNameReadable.append(ScanMeta.get('Readable')[CollectionsIdx])
         
-        currPath = ScanMeta.get('Path')[CollectionsIdx]
-        currURI = ScanMeta.get('URI')[CollectionsIdx]
-        
-        if (OutputFile is not None):
-            currPathBase = os.path.dirname(currPath)
-            currURIBase = os.path.dirname(currURI)
-            OutputFileName.append(OutputFile)
-            OutputFilePathName.append(os.path.normpath(OutputDir +os.sep+ OutputFile))
-            OutputFileURIName.append(os.path.normpath(OutputDir +os.sep+ OutputFile))
-        else:
-            OutputFileName.append(ScanMeta.get('Name')[CollectionsIdx])
-            FileName.append(ScanMeta.get('Name')[CollectionsIdx])
-    
-        FilePathName.append(currPath)
-        FileURIName.append(currURI)
+        for j in xrange(0, len(ScanMeta.get('Collections'))):
+            
+            if (ScanMeta.get('Format')[j] in FileType):
+            
+#                CollectionsIdx = ScanMeta.get('Format').index(FileType)
+                FilePathNameReadable.append(ScanMeta.get('Readable')[j])
+                
+                currPath = ScanMeta.get('Path')[j]
+                currURI = ScanMeta.get('URI')[j]
+                
+                if (OutputFile is not None):
+                    currPathBase = os.path.dirname(currPath)
+                    currURIBase = os.path.dirname(currURI)
+                    OutputFileName.append(OutputFile)
+                    OutputFilePathName.append(os.path.normpath(OutputDir +os.sep+ OutputFile))
+                    OutputFileURIName.append(os.path.normpath(OutputDir +os.sep+ OutputFile))
+                else:
+                    OutputFileName.append(ScanMeta.get('Name')[j])
+                    FileName.append(ScanMeta.get('Name')[j])
+            
+                FilePathName.append(currPath)
+                FileURIName.append(currURI)
     
     
 #Write = True    

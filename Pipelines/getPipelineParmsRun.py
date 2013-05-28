@@ -44,6 +44,8 @@ parser.add_argument("-Build", "--Build", dest="Build", default=None, type=str)
 parser.add_argument("-Compute", "--Compute", dest="Compute", default='NRG', type=str)
 # FOR SAFETY...
 parser.add_argument("-Launch", "--Launch", dest="Launch", default=False)
+parser.add_argument("-ForcedRun", "--ForcedRun", dest="ForcedRun", default=False)
+
 
 args = parser.parse_args()
 #MANDATORY....
@@ -59,6 +61,7 @@ Shadow = args.Shadow
 Build = args.Build
 Compute = args.Compute
 Launch = args.Launch
+ForcedRun = args.ForcedRun
 
 if (Server.find('intra') != -1) or (Server.find('hcpi') != -1):
     dbStr = 'intradb'
@@ -94,6 +97,8 @@ PipelineLauncher = '/data/%s/pipeline/bin/XnatPipelineLauncher ' % (dbStr)
 if (Compute == 'NRG'):
     TemplatesDir = '/nrgpackages/atlas/HCP/'
     ConfigDir = '/nrgpackages/tools/HCP/conf/'
+    BinaryDir = '/nrgpackages/tools/HCP/bin/'
+    GlobalScripts = '/nrgpackages/tools/HCP/scripts/'
     CaretAtlasDir = '/nrgpackages/atlas/HCP/standard_mesh_atlases/'
     PipelineScripts = '/data/%s/pipeline/catalog/%s/resources/scripts/' % (dbStr, Pipeline)
 elif (Compute == 'CHPC'):
@@ -101,8 +106,11 @@ elif (Compute == 'CHPC'):
 #    PipelineLauncher = '/HCP/BlueArc/chpc/%s/pipeline/bin/XnatPipelineLauncher ' % (dbStr)
     TemplatesDir = '/NRG/BlueArc/nrgpackages/atlas/HCP/'
     ConfigDir = '/NRG/BlueArc/nrgpackages/tools/HCP/conf/'
+    BinaryDir = '/NRG/BlueArc/nrgpackages/tools/HCP/bin/'
+    GlobalScripts = '/NRG/BlueArc/nrgpackages/tools/HCP/scripts/'
     CaretAtlasDir = '/NRG/BlueArc/nrgpackages/atlas/HCP/standard_mesh_atlases/'
     PipelineScripts = '/HCP/BlueArc/chpc/%s/pipeline/catalog/%s/resources/scripts/' % (dbStr, Pipeline)
+    
      
 #===============================================================================
 # HACK for REST RL/LR...
@@ -132,11 +140,12 @@ else:
     BuildList = ('')
     
 
-if (len(SubjectsList) > len(ShadowList)):
+if (len(SubjectsList) > len(ShadowList)) and ('FunctionalHCP' in Pipeline):
 #    ShadowArray = numpy.tile(ShadowList, (numpy.ceil(len(SubjectsList) / len(ShadowList))))
-    ShadowArray = numpy.tile(ShadowList, (numpy.ceil(len(SubjectsList))))
+    ShadowArray = numpy.tile(ShadowList, (numpy.ceil(len(SubjectsList)*18)))
 else: 
-    ShadowArray = numpy.tile(ShadowList, (1))
+    ShadowArray = numpy.tile(ShadowList, len(SubjectsList))
+    
 
 if (len(SubjectsList) > len(BuildList)):
     BuildArray = numpy.tile(BuildList, (numpy.ceil(len(SubjectsList))))
@@ -157,6 +166,7 @@ linIdx = 0
 for h in xrange(0, len(SubjectsList)): 
     getHCP.Subject = SubjectsList[h]
     SubjectSessions = getHCP.getSubjectSessions()
+    SubjectMetaData = getHCP.getSubjectMeta()
     
     # find correct session...
     for i in xrange(0, len(SubjectSessions.get('Sessions'))):
@@ -165,7 +175,10 @@ for h in xrange(0, len(SubjectsList)):
         if (FunctSeries != None) and (FunctSeries in sessionMeta.get('Series')):
             break
         else: 
-            getHCP.Session = SubjectSessions.get('Sessions')[SubjectSessions.get('Types').index(PipelineSubString[0])]
+            try:
+                getHCP.Session = SubjectSessions.get('Sessions')[SubjectSessions.get('Types').index(PipelineSubString[0])]
+            except:
+                break
             
     sessionMeta = getHCP.getSessionMeta()
     seriesList = sessionMeta.get('Series')
@@ -244,6 +257,10 @@ for h in xrange(0, len(SubjectsList)):
         launcherConfigDir = '-parameter configdir=%s ' % ConfigDir
         launcherCaretAtlasDir = '-parameter CaretAtlasDir=%s ' % CaretAtlasDir
         launcherPipelineScripts = '-parameter pipelinescripts=%s ' % PipelineScripts
+        launcherBinaryDir = '-parameter binarydir=%s ' % BinaryDir
+        launcherGlobalScripts = '-parameter globalscripts=%s ' % BinaryDir
+        launcherExternalProject = '-project %s ' % Project
+
 
         
         if (len(FunctionalList) > 1):
@@ -264,11 +281,9 @@ for h in xrange(0, len(SubjectsList)):
         # TODO: Figure out how CHPC shadows will be handled...
         #=======================================================================
         if (socket.gethostname() == 'intradb.humanconnectome.org') and (Shadow != None):
-            Host = '-host https://intradb-shadow%s.nrg.mir '  % ShadowArray[h]
-            
-        # TODO: Need to verify this shadow host...    
+            Host = '-host http://intradb-shadow%s.nrg.mir:8080 '  % ShadowArray[i] 
         elif (socket.gethostname() == 'db.humanconnectome.org') and (Shadow != None):
-            Host = '-host https://db-shadow%s.nrg.mir ' % ShadowArray[h]
+            Host = '-host https://db-shadow%s.nrg.mir ' % ShadowArray[i]
         else: 
 #            Host = '-host https://%s ' % (socket.gethostname())
             Host = '-host %s ' % (pyHCP.Server)
@@ -337,8 +352,8 @@ for h in xrange(0, len(SubjectsList)):
             launcherRL_Dir3 = '-parameter RL_Dir3=%s ' % DiffusionDirDict['RL_Dir3']
             
             # DONE: Add input to "pipelinescripts"
-            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherSession + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
-            launcherPipelineScripts + launcherEchoSpacing + launcherPhaseEncodingDir + launcherSubject + BuildDir + launcherLR_Dir1 + launcherLR_Dir2 + launcherLR_Dir3 + launcherRL_Dir1 + launcherRL_Dir2 + launcherRL_Dir3 + \
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherExternalProject + launcherXnatId + launcherSession + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
+            launcherPipelineScripts + launcherBinaryDir + launcherGlobalScripts + launcherEchoSpacing + launcherPhaseEncodingDir + launcherSubject + BuildDir + launcherLR_Dir1 + launcherLR_Dir2 + launcherLR_Dir3 + launcherRL_Dir1 + launcherRL_Dir2 + launcherRL_Dir3 + \
             DiffusionScanIdDict['RL_1ScanId'] + DiffusionScanIdDict['RL_2ScanId'] + DiffusionScanIdDict['RL_3ScanId'] + DiffusionScanIdDict['LR_1ScanId'] + DiffusionScanIdDict['LR_2ScanId'] + DiffusionScanIdDict['LR_3ScanId'] 
             
             if sys.platform == 'win32':
@@ -458,7 +473,7 @@ for h in xrange(0, len(SubjectsList)):
             # for PostFS...
             launcherFinalTemplateSpace = '-parameter FinalTemplateSpace=MNI152_T1_0.7mm.nii.gz '
             
-            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherExternalProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             BuildDir + launcherSession + launcherSubject + launcherMagScanId + launcherPhaScanId + launcherT1wScanId_1 + launcherT1wScanId_2 + \
             launcherT2wScanId_1 + launcherT2wScanId_2 + launcherT1wSeriesDesc_1 + launcherT1wSeriesDesc_2 + launcherT2wSeriesDesc_1 + launcherT2wSeriesDesc_2 + launcherTE + launcherT1wSampleSpacing + launcherT2wSampleSpacing + launcherT1wTemplate + \
             launcherT1wTemplateBrain + launcherT2wTemplate + launcherT2wTemplateBrain + launcherTemplateMask + launcherFinalTemplateSpace + launcherTemplatesDir + launcherConfigDir + launcherCaretAtlasDir 
@@ -569,11 +584,18 @@ for h in xrange(0, len(SubjectsList)):
             
             minMagIdx = magScanDiffList.index(min(magScanDiffList)) 
             minPhaIdx = phaScanDiffList.index(min(phaScanDiffList)) 
-            functMagGroupIdx = magShimGroupList.index(functScanParms.get('ShimGroup'))
-            functPhaGroupIdx = phaShimGroupList.index(functScanParms.get('ShimGroup'))
+            
+            try:
+                functMagGroupIdx = magShimGroupList.index(functScanParms.get('ShimGroup'))
+                functPhaGroupIdx = phaShimGroupList.index(functScanParms.get('ShimGroup'))
+            except:
+                print "Error: Functional ShimGroup not in list of possible fieldmap ShimGroups. Abandoning subject %s at %s..." % (getHCP.Subject, currSeries)
+                break
             
 
                 
+#            MagScanId = '212'
+#            PhaScanId = '211'
             MagScanId = magScanIdList[functMagGroupIdx]
             PhaScanId = phaScanIdList[functPhaGroupIdx]
             #------------------------------------------
@@ -583,7 +605,7 @@ for h in xrange(0, len(SubjectsList)):
             launcherFuncScanId = '-parameter functionalscanid=%s ' % (FuncScanId)
             launcherScoutScanId = '-parameter scoutscanid=%s ' % (ScoutScanId)
             launcherFunctSeries = '-parameter functionalseries=%s ' % (currSeries)
-#            100307_3T_SpinEchoFieldMap_LR.nii.gz
+
             launcherLR_Fieldmap = '-parameter lr_fieldmapseries=SpinEchoFieldMap_LR '
             launcherRL_Fieldmap = '-parameter rl_fieldmapseries=SpinEchoFieldMap_RL '
             launcherDwellTime = '-parameter DwellTime=%s ' % (str( float(FuncScanParms.get('EchoSpacing')) ))
@@ -594,7 +616,7 @@ for h in xrange(0, len(SubjectsList)):
             # NOTE: also important for functionalHCP is distortion correction is TOPUP, so fieldmap distortion correction is not even used.  TE could be anything and it would not matter.
             #-------------------------------------------
             
-            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherExternalProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +  SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName +\
             BuildDir + launcherSession + launcherSubject + launcherMagScanId + launcherPhaScanId + launcherFuncScanId + launcherScoutScanId + \
             launcherFunctSeries + launcherLR_Fieldmap + launcherRL_Fieldmap + launcherDwellTime + TE + launcherUnwarpDir + launcherDistortionCorrect + launcherTemplatesDir + launcherConfigDir + launcherCaretAtlasDir 
             
@@ -610,6 +632,11 @@ for h in xrange(0, len(SubjectsList)):
                         
             else:
                 print 'WARNING: ShimGroup or SEFieldMapGroup mismatch for subject %s, session %s, series %s, on server %s.' % (getHCP.Subject, getHCP.Session, currSeries, getHCP.Server)
+                if ForcedRun and Launch:
+                    print SubmitStr
+#                        os.system(SubmitStr)
+                    subprocess.call(SubmitStr, shell=True)
+                    
                 
 
                 
@@ -621,7 +648,7 @@ for h in xrange(0, len(SubjectsList)):
             launcherBP = '-parameter BP=%s ' % (str(2000))
             launcherFunctSeries = '-parameter functseries=%s ' % (currSeries)
             
-            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +\
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherExternalProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +\
             SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName + launcherSubject + launcherSession + BuildDir + launcherBP + launcherFunctSeries 
             
             if sys.platform == 'win32':
