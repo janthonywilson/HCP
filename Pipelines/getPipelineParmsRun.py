@@ -34,7 +34,7 @@ parser.add_argument("-Password", "--Password", dest="Password", default='none', 
 parser.add_argument("-Pipeline", "--Pipeline", dest="Pipeline", default='fMRIVolume', type=str)
 parser.add_argument("-Subjects", "--Subjects", dest="Subjects", default='00', type=str)
 parser.add_argument("-Server", "--Server", dest="Server", default='http://hcpi-dev-cuda00.nrg.mir/', type=str)
-parser.add_argument('--version', action='version', version='%(prog)s 2.0.0')
+parser.add_argument('--version', action='version', version='%(prog)s 2.1.0')
 # IF Pipeline == Functional...
 parser.add_argument("-FunctSeries", "--FunctSeries", dest="FunctSeries", default=None, type=str)
 # END MANDATORY....
@@ -118,6 +118,7 @@ elif (Compute == 'CHPC'):
 preChangeRLList = ('100307','111312','114924','119833','125525','138231','144266','150423','159239','162329',\
                    '167743','174437','185139','192439','197550','199251','217429','249947','255639','329440',\
                    '355542','499566','585862','611231','665254','672756','792564','826353','877168','896778')
+FunctionalRoots = ['tfMRI_LANGUAGE', 'tfMRI_SOCIAL', 'tfMRI_RELATIONAL', 'tfMRI_MOTOR', 'tfMRI_GAMBLING', 'tfMRI_WM', 'tfMRI_EMOTION']
 #===============================================================================
 # INTERFACE...
 #===============================================================================
@@ -156,6 +157,7 @@ if (Pipeline == 'FunctionalHCP'): PipelineSubString = ['fnc', 'task', 'rest']
 elif (Pipeline == 'StructuralHCP'): PipelineSubString = ['strc']
 elif (Pipeline == 'DiffusionHCP'): PipelineSubString = ['diff']
 elif (Pipeline == 'FIX_HCP'): PipelineSubString = ['fnc', 'rest']
+elif (Pipeline == 'TaskfMRIHCP'): PipelineSubString = ['fnc']
 else: PipelineSubString = None
     
 UsableList = ['good', 'excellent', 'usable', 'undetermined']
@@ -186,12 +188,20 @@ for h in xrange(0, len(SubjectsList)):
     idList = sessionMeta.get('IDs')
     qualityList = sessionMeta.get('Quality')
     
+    # build the subject specific functional lists...
     if (FunctSeries == None) and (Pipeline == 'FunctionalHCP'):
         FunctionalList = list()
         for i in xrange(0, len(sessionMeta.get('Types'))):
             if (sessionMeta.get('Types')[i] == 'tfMRI') or (sessionMeta.get('Types')[i] == 'rfMRI'):
                 FunctionalList.append(sessionMeta.get('Series')[i])
-    elif (Pipeline == 'FunctionalHCP') or (Pipeline == 'FIX_HCP'):
+                
+    elif (FunctSeries == None) and (Pipeline == 'TaskfMRIHCP'):
+        FunctionalList = list()
+        for i in xrange(0, len(FunctionalRoots)):
+            if (FunctionalRoots[i] + '_RL' in sessionMeta.get('Series')) and (FunctionalRoots[i] + '_LR' in sessionMeta.get('Series')):
+                FunctionalList.append(FunctionalRoots[i])
+        
+    elif (Pipeline == 'FunctionalHCP') or (Pipeline == 'FIX_HCP') or (Pipeline == 'TaskfMRIHCP'):
         FunctionalList = FunctSeries.split(',')
     else:
         FunctionalList = ['Other']
@@ -228,6 +238,10 @@ for h in xrange(0, len(SubjectsList)):
             structSessionIdx = SubjectSessions.get('Types').index('strc')
             getHCP.Session = SubjectSessions.get('Sessions')[structSessionIdx]
             sessionMeta = getHCP.getSessionMeta()
+            
+        elif (Pipeline.find('TaskfMRI') != -1):
+            
+            currSeries = FunctionalList[i]
             
         else:
             print 'ERROR: Pipline not found...'
@@ -498,11 +512,12 @@ for h in xrange(0, len(SubjectsList)):
                     if all(PathMatch):
                         print SubmitStr
                         if Launch:
-#                            os.system(SubmitStr)
                             subprocess.call(SubmitStr, shell=True)
                     else:
+                        print SubmitStr
                         print 'ERROR: file paths mismatch for subject %s, session %s, pipeline %s, on server %s.' % (getHCP.Subject, getHCP.Session, Pipeline, getHCP.Server)
             else:
+                print SubmitStr
                 print 'ERROR: GEFieldMapGroup mismatch for subject %s, session %s, pipeline %s, on server %s.' % (getHCP.Subject, getHCP.Session, Pipeline, getHCP.Server) 
                 
         #=======================================================================
@@ -589,13 +604,12 @@ for h in xrange(0, len(SubjectsList)):
                 functMagGroupIdx = magShimGroupList.index(functScanParms.get('ShimGroup'))
                 functPhaGroupIdx = phaShimGroupList.index(functScanParms.get('ShimGroup'))
             except:
+                functMagGroupIdx = 0
+                functPhaGroupIdx = 0
                 print "Error: Functional ShimGroup not in list of possible fieldmap ShimGroups. Abandoning subject %s at %s..." % (getHCP.Subject, currSeries)
-                break
+#                break
             
 
-                
-#            MagScanId = '212'
-#            PhaScanId = '211'
             MagScanId = magScanIdList[functMagGroupIdx]
             PhaScanId = phaScanIdList[functPhaGroupIdx]
             #------------------------------------------
@@ -627,14 +641,13 @@ for h in xrange(0, len(SubjectsList)):
                 else:
                     print SubmitStr
                     if Launch:
-#                        os.system(SubmitStr)
                         subprocess.call(SubmitStr, shell=True)
                         
             else:
+                print SubmitStr
                 print 'WARNING: ShimGroup or SEFieldMapGroup mismatch for subject %s, session %s, series %s, on server %s.' % (getHCP.Subject, getHCP.Session, currSeries, getHCP.Server)
                 if ForcedRun and Launch:
                     print SubmitStr
-#                        os.system(SubmitStr)
                     subprocess.call(SubmitStr, shell=True)
                     
                 
@@ -659,7 +672,54 @@ for h in xrange(0, len(SubjectsList)):
 #                    os.system(SubmitStr)
                     subprocess.call(SubmitStr, shell=True)
 
-        
+        #===============================================================================
+        # TaskfMRIHCP....
+        #===============================================================================
+        elif (Pipeline == 'TaskfMRIHCP'):
+
+
+            #===================================================================
+            # <parameter> functroot
+            # <parameter> functseries
+            # <parameter> lowresmesh
+            # <parameter> grayordinates
+            # <parameter> origsmoothingFWHM
+            # <parameter> finalsmoothingFWHM
+            # <parameter> confound
+            # <parameter> vba
+            #===================================================================
+            LowResMesh = 32
+            GrayOrdinates = 2
+            OrigSmoothingFWHM = 2
+            FinalSmoothingFWHM = 4
+            TemporalFilter = 200
+            Confound = 'NONE'
+            VolumeBasedAnal = 'YES'
+            
+            
+            currSeriesParts = currSeries.split('_')
+
+            launcherFunctRoot = '-parameter functroot=%s ' % (currSeries)
+            launcherFunctSeries = '-parameter functseries=%s ' % (currSeries)
+            launcherLowResMesh = '-parameter lowresmesh=%s ' % (LowResMesh)
+            launcherGrayOrdinates = '-parameter grayordinates=%s ' % (GrayOrdinates)
+            launcherOrigSmoothingFWHM = '-parameter origsmoothingFWHM=%s ' % (OrigSmoothingFWHM)
+            launcherFinalSmoothingFWHM = '-parameter finalsmoothingFWHM=%s ' % (4)
+            launcherTemporalFilter = '-parameter temporalfilter=%s ' % (TemporalFilter)
+            launcherConfound = '-parameter confound=%s ' % (Confound)
+            launcherVolumeBasedAnal = '-parameter vba=%s ' % (VolumeBasedAnal)
+            
+            SubmitStr = JobSubmitter + PipelineLauncher + launcherPipeline + launcherHCPid + DataType + Host + XnatServer + launcherProject + launcherExternalProject + launcherXnatId + launcherLabel + launcherUser + launcherPassword +\
+            SupressNotify + NotifyUser + NotifyAdmin + AdminEmail + UserEmail + MailHost + UserFullName + launcherSubject + launcherSession + BuildDir +\
+            launcherFunctSeries + launcherFunctRoot + launcherLowResMesh + launcherGrayOrdinates + launcherOrigSmoothingFWHM + launcherFinalSmoothingFWHM + launcherTemporalFilter + launcherConfound + launcherVolumeBasedAnal
+             
+            
+            if sys.platform == 'win32':
+                print SubmitStr
+            else:
+                print SubmitStr
+                if Launch:
+                    subprocess.call(SubmitStr, shell=True)
             
         
             

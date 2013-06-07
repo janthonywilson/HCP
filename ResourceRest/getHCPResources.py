@@ -29,6 +29,7 @@ sTime = time.time()
 #===============================================================================
 # Examples:
 # -Server https://hcpx-dev-cuda00.nrg.mir/ -User tony -Password passfoo -Project HCP_Q1 -Subject 100307 -Session 100307_3T -Resource Structural_preproc -OutputDir C:\tmp\strc -ResourcePath T1w/ -Flatten False
+# -Server http://db.humanconnectome.org:8080 -User tony -Password passfoo -Project HCP_Q2 -Subject 792564 -Session 792564_3T -Resource tfMRI_EMOTION_RL_preproc -OutputDir C:\tmp\tfrmi  -Files /MNINonLinear/Results/tfMRI_EMOTION_RL/tfMRI_EMOTION_RL_Atlas.dtseries.nii,/MNINonLinear/Results/tfMRI_EMOTION_RL/tfMRI_EMOTION_RL.nii.gz,/MNINonLinear/Results/tfMRI_EMOTION_RL/tfMRI_EMOTION_RL_SBRef.nii.gz
 #===============================================================================
 parser = argparse.ArgumentParser(description="Program to get files from resources for HCP pipelines...")
 parser.add_argument("-User", "--User", dest="User", default='tony', type=str)

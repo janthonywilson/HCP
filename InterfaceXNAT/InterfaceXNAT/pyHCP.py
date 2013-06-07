@@ -424,7 +424,7 @@ class getHCP(pyHCP):
         
         restResults = self.getURLString(restURL)
         
-        if ('404' in restResults):
+        if ('404 Error' in restResults):
             return restResults
             
         restResultsSplit = restResults.split('\n')
